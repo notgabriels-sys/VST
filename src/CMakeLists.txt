@@ -1,5 +1,5 @@
-cmake_minimum_required(VERSION 3.15)
-project(GranularFreezePluginBinary)
+# No project() call here on purpose: a nested project() resets PROJECT_VERSION,
+# which juce_add_plugin requires. This directory inherits the root project.
 
 # Simple CMake target producing a JUCE plugin
 # This assumes JUCE is available and that juce_add_plugin is in scope (via JUCE's CMake setup)
@@ -9,6 +9,7 @@ if(NOT TARGET juce::juce_audio_processors)
 endif()
 
 juce_add_plugin(GranularFreeze
+  VERSION ${PROJECT_VERSION}
   PLUGIN_MANUFACTURER_CODE GFZP
   PLUGIN_CODE GF01
   FORMATS VST3 AU
