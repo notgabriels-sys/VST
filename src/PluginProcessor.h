@@ -27,6 +27,10 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    // Expose parameter accessors for simple editor wiring
+    juce::AudioParameterBool* getFreezeParameter() { return freezeParam; }
+    juce::AudioParameterFloat* getPitchParameter() { return pitchParam; }
+
 private:
     // Parameters (simple, using legacy addParameter API for a quick prototype)
     juce::AudioParameterBool* freezeParam = nullptr;    // when true, stop writing to buffer and play back

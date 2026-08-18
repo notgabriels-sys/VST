@@ -15,5 +15,10 @@ public:
 private:
     GranularFreezeAudioProcessor& audioProcessor;
 
+    // UI controls
+    juce::ToggleButton freezeButton {"Freeze"};
+    juce::Slider pitchSlider;
+    juce::Label pitchLabel {"pitchLabel", "Pitch"};
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GranularFreezeAudioProcessorEditor)
 };
