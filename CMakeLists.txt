@@ -31,3 +31,6 @@ endif()
 
 # Plugin target
 add_subdirectory(src)
+
+# Offline behavioural tests (see tests/PluginTests.cpp)
+add_subdirectory(tests)

@@ -50,6 +50,11 @@ private:
     double readPosition = 0.0; // fractional read head for playback when frozen
     double currentSampleRate = 44100.0;
     int maxBufferSize = 0; // samples (depends on configured seconds)
+    // How much of circularBuffer actually holds captured audio. Until the
+    // buffer has filled once this is less than maxBufferSize, and frozen
+    // playback must wrap within it -- otherwise the read head runs through the
+    // still-zeroed remainder and freeze outputs silence.
+    int validSamples = 0;
 
     // Crossfade smoothing when toggling freeze (in samples)
     int crossfadeSamples = 0;

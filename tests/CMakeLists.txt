@@ -1,0 +1,12 @@
+# Offline harness that drives the processor directly (no host, no audio device),
+# so the freeze/crossfade/pitch behaviour can be asserted in CI.
+juce_add_console_app(GranularFreezeTests PRODUCT_NAME "GranularFreezeTests")
+
+target_sources(GranularFreezeTests PRIVATE PluginTests.cpp)
+
+juce_generate_juce_header(GranularFreezeTests)
+
+target_link_libraries(GranularFreezeTests PRIVATE
+  GranularFreeze
+  juce::juce_audio_processors
+  juce::juce_audio_utils)

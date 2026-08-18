@@ -39,6 +39,18 @@ jobs:
         shell: bash
         run: cmake --build build --config Release --parallel
 
+      - name: Run behavioural tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Locate the console app: Xcode and MSVC put it in different places.
+          BIN=$(find build -type f -name 'GranularFreezeTests' -o -type f -name 'GranularFreezeTests.exe' | head -n1)
+          if [ -z "$BIN" ]; then
+            echo "test binary not found under build/"; exit 1
+          fi
+          echo "running $BIN"
+          "$BIN"
+
       - name: Package (macOS)
         if: matrix.os == 'macos-latest'
         shell: bash
