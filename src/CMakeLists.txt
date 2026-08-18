@@ -16,6 +16,9 @@ juce_add_plugin(GranularFreeze
   COMPANY_NAME "Gabriel Garcia Alonso"
 )
 
+# Sources use `#include <JuceHeader.h>`, which only exists if this is called.
+juce_generate_juce_header(GranularFreeze)
+
 target_sources(GranularFreeze PRIVATE
   PluginProcessor.cpp
   PluginProcessor.h
