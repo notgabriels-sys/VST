@@ -13,6 +13,11 @@ juce_add_plugin(GranularFreeze
   PLUGIN_MANUFACTURER_CODE GFZP
   PLUGIN_CODE GF01
   FORMATS VST3 AU
+  # JUCE errors out unless this is decided explicitly. Per JUCE's own guidance:
+  # with neither a VST2 nor a VST3 release out in the wild, ship VST3 only and
+  # disable VST2 replacement. This must not change once a VST3 is released --
+  # flipping it later breaks parameter automation in saved sessions.
+  VST3_CAN_REPLACE_VST2 FALSE
   PRODUCT_NAME "Granular Freeze"
   COMPANY_NAME "Gabriel Garcia Alonso"
 )
