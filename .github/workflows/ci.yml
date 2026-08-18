@@ -21,7 +21,7 @@ jobs:
           submodules: recursive
 
       - name: Install CMake
-        uses: lukka/get-cmake@v3
+        uses: lukka/get-cmake@v2
 
       - name: Configure
         run: |
