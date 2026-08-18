@@ -33,6 +33,14 @@ void GranularFreezeAudioProcessor::prepareToPlay (double sampleRate, int samples
 
     writePosition = 0;
     readPosition = 0.0;
+
+    // Crossfade: default 30 ms
+    const double crossfadeMs = 30.0;
+    crossfadeSamples = static_cast<int> (std::max (1.0, std::round (crossfadeMs * 0.001 * currentSampleRate)));
+    crossfadePos = 0;
+    crossfadeDir = None;
+    freezeWriting = true;
+    prevFreezeState = false;
 }
 
 void GranularFreezeAudioProcessor::releaseResources() {}
@@ -64,42 +72,124 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
     const int numSamples = buffer.getNumSamples();
     const int numChannels = juce::jmin (circularBuffer.getNumChannels(), buffer.getNumChannels());
 
-    const bool frozen = freezeParam ? freezeParam->get() : false;
+    const bool frozen = freezeParam ? (freezeParam->get() > 0.5f) : false;
     const float pitch = pitchParam ? pitchParam->get() : 1.0f;
 
-    for (int ch = 0; ch < numChannels; ++ch)
+    // Detect freeze change and start crossfade
+    if (frozen != prevFreezeState)
     {
-        auto* writeData = circularBuffer.getWritePointer (ch);
-        auto* channelData = buffer.getReadPointer (ch);
-        auto* outData = buffer.getWritePointer (ch);
-
-        if (! frozen)
+        if (frozen)
         {
-            // Write incoming audio to circular buffer and pass-through
-            for (int i = 0; i < numSamples; ++i)
-            {
-                writeData[writePosition] = channelData[i];
-                outData[i] = channelData[i];
-                writePosition = (writePosition + 1) % maxBufferSize;
-            }
-            // Keep readPosition following writePosition so playback starts near live
+            // Start crossfade TO frozen: set read head to current write position
             readPosition = static_cast<double> (writePosition);
+            crossfadeDir = ToFrozen;
+            crossfadePos = crossfadeSamples;
+            freezeWriting = false; // stop writing during crossfade to freeze the buffer content
         }
         else
         {
-            // When frozen, read from circular buffer using readPosition and pitch
-            const double increment = pitch; // 1.0 = normal speed, 2.0 = double, 0.5 = half
+            // Start crossfade TO live: allow writing immediately for smooth transition
+            crossfadeDir = ToLive;
+            crossfadePos = crossfadeSamples;
+            freezeWriting = true;
+        }
+        prevFreezeState = frozen;
+    }
+
+    for (int ch = 0; ch < numChannels; ++ch)
+    {
+        auto* circularData = circularBuffer.getWritePointer (ch);
+        auto* inData = buffer.getReadPointer (ch);
+        auto* outData = buffer.getWritePointer (ch);
+
+        if (crossfadeDir == None)
+        {
+            if (! frozen)
+            {
+                // Normal live pass-through and writing
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    float inS = inData[i];
+                    outData[i] = inS;
+                    circularData[writePosition] = inS;
+                    writePosition = (writePosition + 1) % maxBufferSize;
+                }
+                // keep read head near write position
+                readPosition = static_cast<double> (writePosition);
+            }
+            else
+            {
+                // Fully frozen playback
+                const double increment = pitch;
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    float sample = linearInterpolate (circularData, maxBufferSize, readPosition);
+                    outData[i] = sample;
+                    readPosition += increment;
+                    if (readPosition >= maxBufferSize) readPosition -= maxBufferSize;
+                    if (readPosition < 0.0) readPosition += maxBufferSize;
+                }
+            }
+        }
+        else
+        {
+            // Crossfading between live and frozen
+            const double increment = pitch;
             for (int i = 0; i < numSamples; ++i)
             {
-                // readPosition is fractional; use interpolation
-                float sample = linearInterpolate (writeData, maxBufferSize, readPosition);
-                outData[i] = sample;
+                float inS = inData[i];
+                float frozenS = linearInterpolate (circularData, maxBufferSize, readPosition);
+
+                // compute alpha (amount of frozen audio)
+                float alpha = 0.0f;
+                if (crossfadePos > 0)
+                {
+                    double frac = (double) crossfadePos / (double) crossfadeSamples;
+                    if (crossfadeDir == ToFrozen)
+                        alpha = static_cast<float> (1.0 - frac); // 0 -> 1
+                    else // ToLive
+                        alpha = static_cast<float> (frac);     // 1 -> 0
+                }
+                else
+                {
+                    alpha = (crossfadeDir == ToFrozen) ? 1.0f : 0.0f;
+                }
+
+                // mix
+                outData[i] = inS * (1.0f - alpha) + frozenS * alpha;
+
+                // read head advances for frozen playback portion
                 readPosition += increment;
-                // wrap
                 if (readPosition >= maxBufferSize) readPosition -= maxBufferSize;
                 if (readPosition < 0.0) readPosition += maxBufferSize;
+
+                // Write into circular buffer only if writing is enabled
+                if (freezeWriting)
+                {
+                    circularData[writePosition] = inS;
+                    writePosition = (writePosition + 1) % maxBufferSize;
+                }
+
+                // advance crossfade position per sample
+                if (crossfadePos > 0)
+                    --crossfadePos;
             }
-            // Do not advance writePosition when frozen
+
+            // If crossfade finished, update state
+            if (crossfadePos <= 0)
+            {
+                if (crossfadeDir == ToFrozen)
+                {
+                    // now fully frozen; ensure writing is disabled
+                    freezeWriting = false;
+                }
+                else
+                {
+                    // fully live
+                    freezeWriting = true;
+                }
+                crossfadeDir = None;
+            }
         }
     }
 

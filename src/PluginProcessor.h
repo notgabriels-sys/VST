@@ -43,5 +43,13 @@ private:
     double currentSampleRate = 44100.0;
     int maxBufferSize = 0; // samples (depends on configured seconds)
 
+    // Crossfade smoothing when toggling freeze (in samples)
+    int crossfadeSamples = 0;
+    int crossfadePos = 0; // counts down
+    enum CrossfadeDir { None = 0, ToFrozen = 1, ToLive = 2 };
+    CrossfadeDir crossfadeDir = None;
+    bool freezeWriting = true; // when false, incoming audio is not written to circular buffer
+    bool prevFreezeState = false;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GranularFreezeAudioProcessor)
 };
