@@ -8,6 +8,8 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     APVTS::ParameterLayout layout;
     layout.add (std::make_unique<juce::AudioParameterBool> ("freeze", "Freeze", false));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("pitch", "Pitch", juce::NormalisableRange<float> (0.5f, 2.0f, 0.01f), 1.0f));
+    // Crossfade time in milliseconds (for freeze/unfreeze smoothing)
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("crossfadeMs", "Crossfade (ms)", juce::NormalisableRange<float> (1.0f, 500.0f, 1.0f), 30.0f));
     return layout;
 }
 
@@ -62,17 +64,33 @@ bool GranularFreezeAudioProcessor::isBusesLayoutSupported (const BusesLayout& la
     return true;
 }
 
-// Linear interpolation helper
-static float linearInterpolate (const float* data, int size, double index)
+// Cubic interpolation (Catmull-Rom) for smoother playback
+static float cubicInterpolate (const float* data, int size, double index)
 {
     if (size <= 0) return 0.0f;
-    int i0 = static_cast<int> (std::floor (index));
-    int i1 = i0 + 1;
-    double frac = index - (double) i0;
-    // wrap indices
-    i0 = (i0 % size + size) % size;
-    i1 = (i1 % size + size) % size;
-    return static_cast<float> (data[i0] * (1.0 - frac) + data[i1] * frac);
+    int i1 = static_cast<int> (std::floor (index));
+    double t = index - (double) i1;
+
+    // indices for -1, 0, +1, +2 relative to i1
+    int im1 = i1 - 1;
+    int i0 = i1;
+    int i2 = i1 + 1;
+    int i3 = i1 + 2;
+
+    // wrap
+    auto wrap = [size](int i){ return (i % size + size) % size; };
+    float y0 = data[wrap(im1)];
+    float y1 = data[wrap(i0)];
+    float y2 = data[wrap(i2)];
+    float y3 = data[wrap(i3)];
+
+    // Catmull-Rom cubic interpolation
+    float a = (-0.5f * y0) + (1.5f * y1) - (1.5f * y2) + (0.5f * y3);
+    float b = y0 - (2.5f * y1) + (2.0f * y2) - (0.5f * y3);
+    float c = (-0.5f * y0) + (0.5f * y2);
+    float d = y1;
+
+    return ((a * (float)(t * t * t)) + (b * (float)(t * t)) + (c * (float)t) + d);
 }
 
 void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -84,8 +102,16 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
     // Read parameter values from APVTS
     auto* freezeVal = apvts.getRawParameterValue ("freeze");
     auto* pitchVal = apvts.getRawParameterValue ("pitch");
+    auto* crossfadeMsVal = apvts.getRawParameterValue ("crossfadeMs");
     const bool frozen = freezeVal ? (*freezeVal > 0.5f) : false;
     const float pitch = pitchVal ? *pitchVal : 1.0f;
+    const float crossfadeMs = crossfadeMsVal ? *crossfadeMsVal : 30.0f;
+
+    // Compute crossfade length in samples based on parameter and sample rate
+    const int requestedCrossfadeSamples = static_cast<int> (std::max (1.0, std::round (crossfadeMs * 0.001 * currentSampleRate)));
+    // update crossfadeSamples if changed
+    if (requestedCrossfadeSamples != crossfadeSamples)
+        crossfadeSamples = requestedCrossfadeSamples;
 
     // Detect freeze change and start crossfade
     if (frozen != prevFreezeState)
@@ -96,11 +122,12 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
             readPosition = static_cast<double> (writePosition);
             crossfadeDir = ToFrozen;
             crossfadePos = crossfadeSamples;
-            freezeWriting = false; // stop writing during crossfade to freeze the buffer content
+            // During the crossfade we will stop writing to freeze the buffer content; keep freezeWriting false
+            freezeWriting = false;
         }
         else
         {
-            // Start crossfade TO live: allow writing immediately for smooth transition
+            // Start crossfade TO live: allow writing during crossfade so live audio replaces buffer gradually
             crossfadeDir = ToLive;
             crossfadePos = crossfadeSamples;
             freezeWriting = true;
@@ -150,17 +177,21 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
             for (int i = 0; i < numSamples; ++i)
             {
                 float inS = inData[i];
-                float frozenS = linearInterpolate (circularData, maxBufferSize, readPosition);
+                // use cubic interpolation for smoother frozen playback
+                float frozenS = cubicInterpolate (circularData, maxBufferSize, readPosition);
 
-                // compute alpha (amount of frozen audio)
+                // compute alpha (amount of frozen audio) using cosine smoothstep for less audible artifacts
                 float alpha = 0.0f;
-                if (crossfadePos > 0)
+                if (crossfadePos > 0 && crossfadeSamples > 0)
                 {
-                    double frac = (double) crossfadePos / (double) crossfadeSamples;
+                    // progress from 0..1 (0 start, 1 end)
+                    double prog = 1.0 - (double) crossfadePos / (double) crossfadeSamples; // 0->1 as crossfadePos counts down
+                    // cosine curve: smooth in/out, map prog to (0..1)
+                    double cosv = 0.5 * (1.0 - std::cos (juce::MathConstants<double>::pi * prog));
                     if (crossfadeDir == ToFrozen)
-                        alpha = static_cast<float> (1.0 - frac); // 0 -> 1
+                        alpha = static_cast<float> (cosv); // 0 -> 1
                     else // ToLive
-                        alpha = static_cast<float> (frac);     // 1 -> 0
+                        alpha = static_cast<float> (1.0 - cosv); // 1 -> 0
                 }
                 else
                 {

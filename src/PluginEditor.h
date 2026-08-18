@@ -20,9 +20,13 @@ private:
     juce::Slider pitchSlider;
     juce::Label pitchLabel {"pitchLabel", "Pitch"};
 
+    juce::Slider crossfadeSlider;
+    juce::Label crossfadeLabel {"crossfadeLabel", "Crossfade"};
+
     // APVTS attachments
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> freezeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> pitchAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> crossfadeAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GranularFreezeAudioProcessorEditor)
 };

@@ -15,9 +15,17 @@ GranularFreezeAudioProcessorEditor::GranularFreezeAudioProcessorEditor (Granular
     addAndMakeVisible (pitchLabel);
     pitchLabel.attachToComponent (&pitchSlider, true);
 
+    // Crossfade slider
+    addAndMakeVisible (crossfadeSlider);
+    crossfadeSlider.setRange (1.0, 500.0, 1.0);
+    crossfadeSlider.setTextValueSuffix (" ms");
+    addAndMakeVisible (crossfadeLabel);
+    crossfadeLabel.attachToComponent (&crossfadeSlider, true);
+
     // Attach UI to parameters via APVTS
     freezeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "freeze", freezeButton);
     pitchAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "pitch", pitchSlider);
+    crossfadeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "crossfadeMs", crossfadeSlider);
 
     setSize (420, 160);
 }
