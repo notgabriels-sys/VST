@@ -104,8 +104,8 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
     auto* pitchVal = apvts.getRawParameterValue ("pitch");
     auto* crossfadeMsVal = apvts.getRawParameterValue ("crossfadeMs");
     const bool frozen = freezeVal ? (*freezeVal > 0.5f) : false;
-    const float pitch = pitchVal ? *pitchVal : 1.0f;
-    const float crossfadeMs = crossfadeMsVal ? *crossfadeMsVal : 30.0f;
+    const float pitch = pitchVal ? pitchVal->load() : 1.0f;
+    const float crossfadeMs = crossfadeMsVal ? crossfadeMsVal->load() : 30.0f;
 
     // Compute crossfade length in samples based on parameter and sample rate
     const int requestedCrossfadeSamples = static_cast<int> (std::max (1.0, std::round (crossfadeMs * 0.001 * currentSampleRate)));
@@ -162,7 +162,7 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
                 const double increment = pitch;
                 for (int i = 0; i < numSamples; ++i)
                 {
-                    float sample = linearInterpolate (circularData, maxBufferSize, readPosition);
+                    float sample = cubicInterpolate (circularData, maxBufferSize, readPosition);
                     outData[i] = sample;
                     readPosition += increment;
                     if (readPosition >= maxBufferSize) readPosition -= maxBufferSize;

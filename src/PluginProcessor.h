@@ -23,6 +23,17 @@ public:
 
     double getTailLengthSeconds() const override { return 0.0; }
 
+    // Required AudioProcessor overrides. This is an audio effect with no MIDI
+    // and no program/preset support, so these are minimal implementations.
+    // JUCE requires getNumPrograms() to return at least 1.
+    bool acceptsMidi() const override                              { return false; }
+    bool producesMidi() const override                             { return false; }
+    int getNumPrograms() override                                  { return 1; }
+    int getCurrentProgram() override                               { return 0; }
+    void setCurrentProgram (int) override                          {}
+    const juce::String getProgramName (int) override               { return {}; }
+    void changeProgramName (int, const juce::String&) override     {}
+
     // Persistence
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
