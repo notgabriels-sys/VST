@@ -1,40 +1,64 @@
-Granular Freeze — Creative Time/Freeze & Granular Texture Engine
+# Granular Freeze
 
-Overview
+A cross-platform **VST3 + AU** audio plugin for live time/freeze effects,
+aimed at Ableton and Bitwig users.
 
-This repository is a scaffold for "Granular Freeze", a cross-platform VST3 + AU audio plugin focused on live creative time/freeze and granular texture generation for Ableton and Bitwig users.
+Author: Gabriel García Alonso · License: MIT
 
-Goals for initial release
-- Real-time freeze / buffer hold of audio with granular re-synthesis and time-stretching
-- Performance-oriented UI for live tweaking (freeze, grain size, density, pitch shift, feedback)
-- Preset system with performance bank (8 quick-load slots) and example project
-- macOS: AU + VST3. Windows: VST3.
+## Status
 
-What is included in this repo
-- Minimal JUCE/CMake project skeleton (expects JUCE added as submodule or JUCE_DIR provided)
-- Basic plugin processor/editor skeleton (placeholder algorithm) in src/
-- GitHub Actions CI workflow template for macOS + Windows builds (.github/workflows/ci.yml)
-- Product spec and CI secret checklist in docs/
-- Packaging script placeholders in scripts/
-- Presets folder for example patches
+Working prototype. It builds and passes tests on macOS and Windows, but has
+**not been released** and has not yet been evaluated by ear in a DAW.
 
-Next steps (recommended)
-1. Review product spec: docs/PRODUCT_SPEC.md
-2. Add JUCE (submodule or set JUCE_DIR) and implement granular engine in src/
-3. Provide signing & notarization secrets for CI (see docs/CI_SECRETS.md)
-4. Run local builds on macOS and Windows to validate and iterate UI/algorithm
-5. Create GitHub repository and push; use GitHub Actions to produce artifacts
-6. Publish binaries to GitHub Releases and Gumroad; prepare marketing assets (screens, demo audio/video)
+**Implemented**
 
-Paths
-- Project root: /Users/notgabriels/Documents/VS Code/granular-freeze-plugin
-- Docs: /Users/notgabriels/Documents/VS Code/granular-freeze-plugin/docs
-- CI workflow: /Users/notgabriels/Documents/VS Code/granular-freeze-plugin/.github/workflows/ci.yml
+- Circular-buffer freeze with a crossfaded transition in and out
+- Crossfaded loop point, so held audio does not click on repeat
+- Pitch control over frozen playback (0.5x–2.0x, cubic interpolation)
+- Parameters via `AudioProcessorValueTreeState` — automatable, and saved with
+  the session
+- UI with freeze toggle, pitch and crossfade-time sliders
+- CI on macOS + Windows with an offline test suite
 
-Author: Gabriel García Alonso (project owner)
+**Not implemented** — the granular engine the name implies is still ahead:
 
-Notes
-- This scaffold avoids embedding secrets. Signing and notarization must be added to CI as secrets under your control.
-- The plugin code uses JUCE; include JUCE as a submodule or set JUCE_DIR in CI/locally.
+- Grain envelope, density and size controls
+- Time-stretching independent of pitch
+- Preset system and performance bank
+- Code signing and notarization (builds are unsigned)
 
-License: MIT (see LICENSE)
+## Parameters
+
+| Parameter | Range | Default |
+|---|---|---|
+| `freeze` | on / off | off |
+| `pitch` | 0.5x – 2.0x | 1.0x |
+| `crossfadeMs` | 1 – 500 ms | 30 ms |
+
+Stereo in / stereo out only. The capture buffer is 8 seconds; frozen playback
+loops whatever has been captured so far, which grows up to that limit.
+
+## Build
+
+    cmake -S . -B build -G "Xcode"      # macOS; omit -G on Windows
+    cmake --build build --config Release --parallel
+
+JUCE 8.0.15 is fetched automatically. Requires CMake >= 3.22. Full instructions,
+including how to run the tests and validate the AU, are in
+[docs/BUILD_AND_TEST.md](docs/BUILD_AND_TEST.md).
+
+## Layout
+
+    src/            plugin processor and editor
+    tests/          offline behavioural tests (run in CI)
+    docs/           build, release and CI secret guides
+    scripts/        packaging helpers
+    presets/        example patches (empty)
+    .github/        CI and release workflows
+
+## Docs
+
+- [docs/PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md) — intended product
+- [docs/BUILD_AND_TEST.md](docs/BUILD_AND_TEST.md) — building, testing, validating
+- [docs/RELEASE.md](docs/RELEASE.md) — tagging and publishing
+- [docs/CI_SECRETS.md](docs/CI_SECRETS.md) — secrets, signing status

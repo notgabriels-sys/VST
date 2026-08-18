@@ -1,51 +1,56 @@
-Release & CI publishing guide
+# Release & publishing
 
-This document describes the automated release workflow and the secrets needed to publish signed artifacts and (optionally) upload builds to Gumroad.
+## What the workflow does
 
-Automatic release workflow
-- A workflow named `Release Build & Publish` runs when you push a tag matching v*.*.* (for example `v0.1.0`).
-- The workflow builds macOS and Windows artifacts in separate jobs, packages them (zip) and uploads them as workflow artifacts.
-- A `publish` job collects artifacts, creates a draft GitHub release for the tag, and uploads packaged assets to the release.
-- If Gumroad secrets are present, the `publish` job will attempt to upload the zip to Gumroad as a new product version.
+`.github/workflows/release.yml` (`Release Build & Publish`) runs on a pushed tag
+matching `v*.*.*`.
 
-Required GitHub repository secrets
-- GITHUB_TOKEN — provided automatically in Actions; no manual setup needed for creating releases.
-- (Optional) GUMROAD_PRODUCT_ID — ID of the Gumroad product where releases should be uploaded.
-- (Optional) GUMROAD_ACCESS_TOKEN — Gumroad API access token (keep this secret). If both GUMROAD_PRODUCT_ID and GUMROAD_ACCESS_TOKEN are set, CI will attempt to upload the zip during release creation.
+1. Builds macOS and Windows in a matrix, runs the test suite, and packages each
+   platform's plugin bundles into a zip.
+2. The `publish` job downloads both artifacts and creates a **draft** GitHub
+   release for the tag with the zips attached, via
+   `softprops/action-gh-release@v2`.
+3. If `GUMROAD_ACCESS_TOKEN` and `GUMROAD_PRODUCT_ID` are both set, it uploads
+   the zip to Gumroad as a new product version. If either is missing it logs a
+   skip and exits cleanly.
 
-Signing and notarization (recommended for production builds)
-- Code signing and notarization are not automated by default because they require sensitive credentials.
-- Recommended secrets to add if you want CI to sign and notarize artifacts:
-  - MACOS_CODESIGN_IDENTITY: The name of your macOS Developer ID Application identity (e.g., "Developer ID Application: Example Corp (TEAMID)")
-  - MACOS_NOTARIZE_USERNAME: Apple ID (email) used for notarization (or use an App-Specific password)
-  - MACOS_NOTARIZE_PASSWORD: App-specific password (or API key) — store this as a secret
-  - WINDOWS_PFX_BASE64: Base64-encoded PFX file for Authenticode signing. (Don't upload .pfx directly as a secret.)
-  - WINDOWS_PFX_PASSWORD: Password for the PFX file
+The release is created as a draft, so nothing is public until you publish it.
 
-How to add secrets
-1. Go to your GitHub repository > Settings > Secrets and variables > Actions > New repository secret.
-2. Add the values above (names must match exactly).
+## Making a release
 
-How to make a release
-1. Create a tag locally and push it:
-   git tag v0.1.0
-   git push origin v0.1.0
-2. The `Release Build & Publish` workflow will run. It will produce a draft release and attach built assets.
-3. Review the draft release on GitHub, update release notes, and publish it.
-4. If you use Gumroad and provided the required secrets, the workflow will also attempt to upload the packaged zip as a new version.
+    git tag v0.1.0
+    git push origin v0.1.0
 
-Manual upload to Gumroad
-- If you prefer not to automate Gumroad uploads, download the signed artifacts from the release and upload them manually at https://gumroad.com
+Then review the draft on GitHub, write the notes, and publish.
 
-Notes & troubleshooting
-- The runner requires a valid CMake + toolchain for the target OS. macOS builds require Xcode; Windows builds require Visual Studio.
-- If builds fail due to missing JUCE, add JUCE as a submodule or adjust CMake variable DJUCE_DIR.
-- This workflow creates a draft release; this gives you a chance to verify artifacts before publishing publicly.
+To undo before publishing: delete the draft release and the tag
+(`git push origin :refs/tags/v0.1.0`).
 
-If you'd like, I can also:
-- Add signing/notarization steps to the build jobs that decode the certificates from secrets and run codesign/signtool.
-- Add a workflow that automatically publishes the draft release (mark as published) and triggers an optional Gumroad upload after your manual confirmation.
-- Create GitHub Release notes automatically from CHANGELOG.md
+## Before the first release
 
-Security reminder
-- Never paste private keys, passwords, or tokens in chat. Use GitHub Secrets. If any token was pasted earlier into an open chat, revoke it immediately.
+- **The workflow has never run.** No tag has been pushed, so the first one is
+  its first real exercise. Expect to iterate.
+- **Builds are unsigned.** See `docs/CI_SECRETS.md`. macOS users get Gatekeeper
+  warnings, Windows users get SmartScreen warnings. This is worth resolving
+  before charging for it.
+- **The plugin has not been evaluated by ear.** CI, the offline tests and auval
+  all pass, but that only establishes it runs correctly — not that it sounds
+  good. Load it in a DAW first.
+
+## Secrets
+
+See `docs/CI_SECRETS.md`, which is the single source for secret names. Only
+`GUMROAD_ACCESS_TOKEN` and `GUMROAD_PRODUCT_ID` are read by any workflow today.
+
+## Manual Gumroad upload
+
+If you would rather not automate it, leave the Gumroad secrets unset, download
+the zips from the draft release, and upload them at https://gumroad.com.
+
+## Troubleshooting
+
+- Build failures: check the Actions log. macOS uses the Xcode generator,
+  Windows the default Visual Studio generator; JUCE is fetched via FetchContent
+  (override with `-DJUCE_SOURCE_DIR=...`, not `JUCE_DIR`).
+- No assets on the release: check the packaging step. The product name contains
+  a space, so paths must stay quoted.
