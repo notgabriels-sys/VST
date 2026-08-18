@@ -10,3 +10,10 @@ target_link_libraries(GranularFreezeTests PRIVATE
   GranularFreeze
   juce::juce_audio_processors
   juce::juce_audio_utils)
+
+# Renders demo audio + objective measurements. Not run in CI; a listening aid.
+juce_add_console_app(GranularFreezeRender PRODUCT_NAME "GranularFreezeRender")
+target_sources(GranularFreezeRender PRIVATE RenderDemo.cpp)
+juce_generate_juce_header(GranularFreezeRender)
+target_link_libraries(GranularFreezeRender PRIVATE
+  GranularFreeze juce::juce_audio_processors juce::juce_audio_utils juce::juce_audio_formats)
