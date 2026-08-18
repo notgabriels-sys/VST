@@ -13,17 +13,23 @@ juce_add_plugin(GranularFreeze
   PLUGIN_MANUFACTURER_CODE GFZP
   PLUGIN_CODE GF01
   FORMATS VST3 AU
-  # JUCE errors out unless this is decided explicitly. Per JUCE's own guidance:
-  # with neither a VST2 nor a VST3 release out in the wild, ship VST3 only and
-  # disable VST2 replacement. This must not change once a VST3 is released --
-  # flipping it later breaks parameter automation in saved sessions.
-  VST3_CAN_REPLACE_VST2 FALSE
   PRODUCT_NAME "Granular Freeze"
   COMPANY_NAME "Gabriel Garcia Alonso"
 )
 
 # Sources use `#include <JuceHeader.h>`, which only exists if this is called.
 juce_generate_juce_header(GranularFreeze)
+
+# JUCE's VST3 wrapper refuses to compile until this is decided explicitly, since
+# it permanently fixes parameter IDs for released plugins. Note this is a module
+# compile definition, NOT a juce_add_plugin keyword -- passing it to
+# juce_add_plugin is silently ignored. PUBLIC so it reaches the generated
+# GranularFreeze_VST3 target, which is where the guard actually fires.
+#
+# Per JUCE's guidance: with neither a VST2 nor a VST3 release published, ship
+# VST3 only and disable VST2 replacement. Do not flip this once a VST3 ships --
+# it would break automation in sessions saved with the released version.
+target_compile_definitions(GranularFreeze PUBLIC JUCE_VST3_CAN_REPLACE_VST2=0)
 
 target_sources(GranularFreeze PRIVATE
   PluginProcessor.cpp
