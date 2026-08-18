@@ -44,9 +44,14 @@ void GranularFreezeAudioProcessor::prepareToPlay (double sampleRate, int samples
 
     writePosition = 0;
     readPosition = 0.0;
+    validSamples = 0;
 
-    // Crossfade: default 30 ms
-    const double crossfadeMs = 30.0;
+    // Seed the crossfade length from the actual parameter rather than a
+    // hardcoded 30 ms, so a session restored with a different crossfade time is
+    // correct on the very first block instead of only after processBlock
+    // recomputes it.
+    const auto* crossfadeMsVal = apvts.getRawParameterValue ("crossfadeMs");
+    const double crossfadeMs = crossfadeMsVal != nullptr ? (double) crossfadeMsVal->load() : 30.0;
     crossfadeSamples = static_cast<int> (std::max (1.0, std::round (crossfadeMs * 0.001 * currentSampleRate)));
     crossfadePos = 0;
     crossfadeDir = None;
@@ -58,9 +63,16 @@ void GranularFreezeAudioProcessor::releaseResources() {}
 
 bool GranularFreezeAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-    // Support only stereo for now
+    // Support only stereo for now.
     if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
         return false;
+
+    // The input set was never checked, so a host could negotiate a mismatched
+    // layout (e.g. mono in / stereo out) that the processing loop does not
+    // handle. This is an in-place effect: input and output must match.
+    if (layouts.getMainInputChannelSet() != layouts.getMainOutputChannelSet())
+        return false;
+
     return true;
 }
 
@@ -93,6 +105,29 @@ static float cubicInterpolate (const float* data, int size, double index)
     return ((a * (float)(t * t * t)) + (b * (float)(t * t)) + (c * (float)t) + d);
 }
 
+
+// Reads the frozen buffer with a crossfaded loop point.
+//
+// Without this the read head jumps from the end of the captured region straight
+// back to the start. The waveform either side of that seam is unrelated, so the
+// discontinuity is an audible click on every single wrap -- once per loop, which
+// for a short capture is a continuous buzz.
+//
+// The loop is shortened by loopFade samples, and the first loopFade samples are
+// mixed with the tail that was cut off. At pos == 0 the output is entirely the
+// tail, at pos == loopFade entirely the head, so the seam is continuous.
+static float readFrozen (const float* data, int span, int loopFade, int loopLen, double pos)
+{
+    const float head = cubicInterpolate (data, span, pos);
+
+    if (loopFade <= 0 || pos >= (double) loopFade)
+        return head;
+
+    const double t = pos / (double) loopFade;              // 0 -> 1
+    const float tail = cubicInterpolate (data, span, pos + loopLen);
+    return (float) ((1.0 - t) * tail + t * head);
+}
+
 void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -104,8 +139,8 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
     auto* pitchVal = apvts.getRawParameterValue ("pitch");
     auto* crossfadeMsVal = apvts.getRawParameterValue ("crossfadeMs");
     const bool frozen = freezeVal ? (*freezeVal > 0.5f) : false;
-    const float pitch = pitchVal ? *pitchVal : 1.0f;
-    const float crossfadeMs = crossfadeMsVal ? *crossfadeMsVal : 30.0f;
+    const float pitch = pitchVal ? pitchVal->load() : 1.0f;
+    const float crossfadeMs = crossfadeMsVal ? crossfadeMsVal->load() : 30.0f;
 
     // Compute crossfade length in samples based on parameter and sample rate
     const int requestedCrossfadeSamples = static_cast<int> (std::max (1.0, std::round (crossfadeMs * 0.001 * currentSampleRate)));
@@ -135,11 +170,33 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
         prevFreezeState = frozen;
     }
 
+    // These are per-instance members, but the loop below advances them once per
+    // CHANNEL. Without resetting, channel 1 would resume from wherever channel 0
+    // finished: writePosition would drift a block further each time (destroying
+    // the stereo image), crossfadePos would count down twice as fast, and once
+    // crossfadeDir was cleared the later channels would skip the fade entirely
+    // and hard-switch. Snapshot here, restore per channel, and let the final
+    // channel leave the committed values -- every channel advances identically,
+    // so the post-loop state is correct.
+    const int       entryWritePosition  = writePosition;
+    const double    entryReadPosition   = readPosition;
+    const int       entryCrossfadePos   = crossfadePos;
+    const CrossfadeDir entryCrossfadeDir = crossfadeDir;
+    const bool      entryFreezeWriting  = freezeWriting;
+    const int       entryValidSamples   = validSamples;
+
     for (int ch = 0; ch < numChannels; ++ch)
     {
         auto* circularData = circularBuffer.getWritePointer (ch);
         auto* inData = buffer.getReadPointer (ch);
         auto* outData = buffer.getWritePointer (ch);
+
+        writePosition = entryWritePosition;
+        readPosition  = entryReadPosition;
+        crossfadePos  = entryCrossfadePos;
+        crossfadeDir  = entryCrossfadeDir;
+        freezeWriting = entryFreezeWriting;
+        validSamples  = entryValidSamples;
 
         if (crossfadeDir == None)
         {
@@ -152,6 +209,7 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
                     outData[i] = inS;
                     circularData[writePosition] = inS;
                     writePosition = (writePosition + 1) % maxBufferSize;
+                    if (validSamples < maxBufferSize) ++validSamples;
                 }
                 // keep read head near write position
                 readPosition = static_cast<double> (writePosition);
@@ -160,13 +218,19 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
             {
                 // Fully frozen playback
                 const double increment = pitch;
+                const int span     = juce::jmax (1, validSamples);
+                const int loopFade = juce::jlimit (0, span / 4, crossfadeSamples);
+                const int loopLen  = juce::jmax (1, span - loopFade);
+
+                readPosition = std::fmod (readPosition, (double) loopLen);
+                if (readPosition < 0.0) readPosition += loopLen;
+
                 for (int i = 0; i < numSamples; ++i)
                 {
-                    float sample = linearInterpolate (circularData, maxBufferSize, readPosition);
-                    outData[i] = sample;
+                    outData[i] = readFrozen (circularData, span, loopFade, loopLen, readPosition);
                     readPosition += increment;
-                    if (readPosition >= maxBufferSize) readPosition -= maxBufferSize;
-                    if (readPosition < 0.0) readPosition += maxBufferSize;
+                    if (readPosition >= loopLen) readPosition -= loopLen;
+                    if (readPosition < 0.0) readPosition += loopLen;
                 }
             }
         }
@@ -174,11 +238,22 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
         {
             // Crossfading between live and frozen
             const double increment = pitch;
+
+            // Fixed for the whole block. When fading back to live, freezeWriting
+            // is true, so validSamples grows every sample -- recomputing these
+            // per sample would move the loop boundary underneath the read head
+            // and tear the frozen source.
+            const int span     = juce::jmax (1, validSamples);
+            const int loopFade = juce::jlimit (0, span / 4, crossfadeSamples);
+            const int loopLen  = juce::jmax (1, span - loopFade);
+
+            readPosition = std::fmod (readPosition, (double) loopLen);
+            if (readPosition < 0.0) readPosition += loopLen;
+
             for (int i = 0; i < numSamples; ++i)
             {
                 float inS = inData[i];
-                // use cubic interpolation for smoother frozen playback
-                float frozenS = cubicInterpolate (circularData, maxBufferSize, readPosition);
+                float frozenS = readFrozen (circularData, span, loopFade, loopLen, readPosition);
 
                 // compute alpha (amount of frozen audio) using cosine smoothstep for less audible artifacts
                 float alpha = 0.0f;
@@ -201,16 +276,18 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
                 // mix
                 outData[i] = inS * (1.0f - alpha) + frozenS * alpha;
 
-                // read head advances for frozen playback portion
+                // read head advances for frozen playback portion, wrapping
+                // within the crossfaded loop rather than the whole buffer
                 readPosition += increment;
-                if (readPosition >= maxBufferSize) readPosition -= maxBufferSize;
-                if (readPosition < 0.0) readPosition += maxBufferSize;
+                if (readPosition >= loopLen) readPosition -= loopLen;
+                if (readPosition < 0.0) readPosition += loopLen;
 
                 // Write into circular buffer only if writing is enabled
                 if (freezeWriting)
                 {
                     circularData[writePosition] = inS;
                     writePosition = (writePosition + 1) % maxBufferSize;
+                    if (validSamples < maxBufferSize) ++validSamples;
                 }
 
                 // advance crossfade position per sample

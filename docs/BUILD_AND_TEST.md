@@ -1,56 +1,94 @@
-Build & Test — Granular Freeze (prototype)
+# Build & Test — Granular Freeze
 
-This document explains how to build the plugin locally and run a quick smoke test. It assumes the repository root is the project folder and that CMake-based JUCE setup is used.
+## Prerequisites
 
-Prerequisites
-- macOS: Xcode (command line tools), CMake (>=3.20), Ninja (optional)
-- Windows: Visual Studio 2022 with C++ workload, CMake
-- JUCE: clone JUCE into third_party/JUCE or point CMake with -DJUCE_DIR
+- **macOS**: Xcode + command line tools, CMake >= 3.22
+- **Windows**: Visual Studio 2022 with the C++ workload, CMake >= 3.22
+- **JUCE**: fetched automatically, see below
 
-Quick steps (macOS)
-1. Clone repository and ensure JUCE is available:
-   git clone https://github.com/notgabriels-sys/VST.git
-   cd VST
+CMake 3.22 is a hard floor because JUCE 8 requires it.
 
-   # Option A: add JUCE as a submodule
-   git submodule update --init --recursive
+## JUCE
 
-   # Option B: clone JUCE manually
-   git clone https://github.com/juce-framework/JUCE.git third_party/JUCE
+You do not need to install JUCE. `CMakeLists.txt` fetches JUCE 8.0.15 via
+`FetchContent` on first configure, which adds a few minutes to a cold build.
 
-2. Configure and build (Xcode generator):
-   mkdir -p build
-   cd build
-   cmake .. -G "Xcode" -DJUCE_DIR=../third_party/JUCE -DCMAKE_BUILD_TYPE=Release
-   cmake --build . --config Release --parallel
+To build against a local JUCE checkout instead, set `JUCE_SOURCE_DIR`:
 
-3. Locate artifacts (example):
-   # VST3 bundle
-   find build -name "*.vst3" -maxdepth 3
-   # AudioUnit (component) bundle on macOS
-   find build -name "*.component" -maxdepth 3
+    cmake -S . -B build -DJUCE_SOURCE_DIR=/path/to/JUCE
 
-4. Test in a host
-   - Copy the .vst3 bundle to ~/Library/Audio/Plug-Ins/VST3/ or use the host's plugin scan locations.
-   - For AU, install to ~/Library/Audio/Plug-Ins/Components/ and run AU validation if desired.
-   - Open your DAW (Ableton, Bitwig, Reaper) and load the plugin. Try toggling Freeze and Pitch.
+Note the variable is `JUCE_SOURCE_DIR`, not `JUCE_DIR`. There is no JUCE
+submodule in this repository, so `git submodule update` does nothing.
 
-Quick steps (Windows)
-1. Ensure Visual Studio and CMake are installed.
-2. From project root:
-   mkdir build
-   cd build
-   cmake .. -G "Visual Studio 17 2022" -A x64 -DJUCE_DIR=..\third_party\JUCE -DCMAKE_BUILD_TYPE=Release
-   cmake --build . --config Release
-3. Locate generated .dll or .vst3 files under build/ and copy to your VST scan path for testing.
+## Build
 
-Notes & Troubleshooting
-- If CMake cannot find JUCE, set the JUCE_DIR variable to the path where JUCE's CMakeLists.txt lives.
-- If the host does not show the plugin, rescan and check console/log for plugin scan errors.
-- For automation and CI, see .github/workflows/ci.yml. Signing and notarization steps are intentionally omitted and must be added when secure secrets (Apple notarization key, Windows code-signing PFX) are available.
+macOS:
 
-Recommended local tests
-- Test at multiple sample rates (44.1k, 48k, 96k) and buffer sizes (64, 256, 1024) to validate buffer wrapping and read-head correctness.
-- Toggle freeze rapidly and slowly to listen for clicks; if clicks persist, increase the crossfadeMs value in PluginProcessor::prepareToPlay.
+    cmake -S . -B build -G "Xcode"
+    cmake --build build --config Release --parallel
 
-If you want, I can attempt to run a CI build here and upload artifacts, but the execution environment may not have Xcode or Visual Studio installed. The GitHub Actions workflow will build on macOS and Windows runners automatically when you push.
+Windows (default Visual Studio generator):
+
+    cmake -S . -B build
+    cmake --build build --config Release --parallel
+
+## Artifacts
+
+    build/src/GranularFreeze_artefacts/Release/VST3/Granular Freeze.vst3
+    build/src/GranularFreeze_artefacts/Release/AU/Granular Freeze.component   # macOS only
+
+Note the space in the product name — quote these paths in shell commands.
+
+## Tests
+
+`tests/PluginTests.cpp` drives the AudioProcessor directly with generated
+signals and asserts on the output. No host and no audio device are needed, and
+it runs in CI on both platforms.
+
+    cmake --build build --config Release --target GranularFreezeTests --parallel
+    "build/tests/GranularFreezeTests_artefacts/Release/GranularFreezeTests"
+
+It covers pass-through fidelity, L/R alignment while frozen, that freeze holds
+audio when the input goes silent, that neither freeze nor unfreeze produces a
+discontinuity, the pitch ratio, and the absence of NaN/Inf. Exit code is
+non-zero on failure.
+
+Both defects found during the initial bring-up — freeze outputting silence, and
+a click at the loop point — were invisible to the compiler and to auval, and
+were caught here. Add a case when you change the DSP.
+
+## AU validation (macOS)
+
+    cp -R "build/src/GranularFreeze_artefacts/Release/AU/Granular Freeze.component" \
+          ~/Library/Audio/Plug-Ins/Components/
+    killall -9 AudioComponentRegistrar
+    auval -v aufx GF01 GFZP
+
+`aufx GF01 GFZP` comes from the plugin/manufacturer codes in
+`src/CMakeLists.txt`. auval renders at several sample rates and block sizes and
+exercises parameter automation, but it does not check that the effect sounds
+right — that still needs a DAW.
+
+## Testing in a host
+
+Copy the `.vst3` to `~/Library/Audio/Plug-Ins/VST3/` (macOS) or
+`C:\Program Files\Common Files\VST3\` (Windows), rescan in your DAW, and load it.
+
+Worth checking by ear:
+
+- Sample rates 44.1k / 48k / 96k and block sizes 64 / 256 / 1024.
+- Freeze within the first few seconds of loading, and after a long run — the
+  captured region grows until it reaches the 8-second buffer.
+- Fast and slow freeze toggling, listening at the transition and at the loop
+  point.
+- Pitch at the extremes (0.5x and 2.0x).
+
+Crossfade time is a parameter (`crossfadeMs`, 1-500 ms) with a slider in the
+UI; change it there rather than in code. Its default lives in
+`createParameterLayout()` in `src/PluginProcessor.cpp`.
+
+## Troubleshooting
+
+- **CMake too old**: JUCE 8 needs >= 3.22.
+- **Plugin does not appear**: rescan, and check the host's plugin scan log.
+- Signing and notarization are not automated. See `docs/CI_SECRETS.md`.

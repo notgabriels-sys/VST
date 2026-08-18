@@ -6,175 +6,121 @@ on:
       - 'v*.*.*'
 
 jobs:
-  build-macos:
-    name: Build macOS
-    runs-on: macos-latest
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Install CMake
-        uses: lukka/get-cmake@v2
+      # CMake is preinstalled on GitHub-hosted runners; no install step needed.
+      - name: Show CMake version
+        shell: bash
+        run: cmake --version
 
-      - name: Configure (Xcode)
+      - name: Configure
+        shell: bash
         run: |
-          mkdir -p build
-          cd build
-          cmake .. -G "Xcode" -DCMAKE_BUILD_TYPE=Release
-
-      - name: Build (Xcode)
-        run: |
-          cd build
-          cmake --build . --config Release --parallel
-
-      - name: Package macOS bundles
-        run: |
-          set -e
-          cd build
-          echo "Looking for macOS plugin artifacts..."
-          PLUGS=$(find . -type d -name "*.vst3" -o -type d -name "*.component" || true)
-          if [ -z "$PLUGS" ]; then
-            echo "No macOS plugin bundles found in build/"
+          if [ "${{ matrix.os }}" = "macos-latest" ]; then
+            cmake -S . -B build -G "Xcode"
           else
-            ZIPNAME=plugin-macos-${{ github.run_id }}.zip
-            echo "Zipping: $PLUGS -> $ZIPNAME"
-            zip -r "$ZIPNAME" $PLUGS
-            echo "Packaged: $(pwd)/$ZIPNAME"
-            echo "$ZIPNAME" > ../macos_artifact_name.txt
+            cmake -S . -B build
           fi
 
-      - name: Upload macOS artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: plugin-macos
-          path: |
-            build/plugin-macos-*.zip
-            build/*.vst3
-            build/*.component
+      - name: Build
+        shell: bash
+        run: cmake --build build --config Release --parallel
 
-  build-windows:
-    name: Build Windows
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install CMake
-        uses: lukka/get-cmake@v2
-
-      - name: Configure (MSVC)
-        shell: pwsh
+      - name: Package macOS bundles
+        if: matrix.os == 'macos-latest'
+        shell: bash
         run: |
-          mkdir build
+          set -euo pipefail
           cd build
-          cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
-
-      - name: Build (MSVC)
-        shell: pwsh
-        run: |
-          cd build
-          cmake --build . --config Release --parallel
+          # Quoting matters: PRODUCT_NAME has a space in it. See ci.yml.
+          if [ "$(find . \( -type d -name '*.vst3' -o -type d -name '*.component' \) | wc -l)" -eq 0 ]; then
+            echo "No macOS plugin bundles found in build/"
+            exit 1
+          fi
+          ZIPNAME=plugin-macos-${{ github.ref_name }}.zip
+          find . \( -type d -name '*.vst3' -o -type d -name '*.component' \) -exec zip -ryq "$ZIPNAME" {} +
+          echo "Packaged: $(pwd)/$ZIPNAME"
 
       - name: Package Windows artifacts
+        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           Set-Location -Path build
-          $dlls = Get-ChildItem -Path . -Include *.dll -Recurse -File -ErrorAction SilentlyContinue
-          if ($dlls) {
-            $zip = "plugin-windows-${{ github.run_id }}.zip"
-            Compress-Archive -Path $dlls -DestinationPath $zip -Force
-            Write-Output "Packaged: $zip"
-            Set-Content -Path ..\windows_artifact_name.txt -Value $zip
-          } else {
-            Write-Output "No Windows artifacts found"
+          $vst3 = Get-ChildItem -Path . -Include *.vst3 -Recurse -ErrorAction SilentlyContinue
+          if (-not $vst3) {
+            Write-Error "No Windows plugin artifacts found"
           }
+          $zip = "plugin-windows-${{ github.ref_name }}.zip"
+          Compress-Archive -Path $vst3 -DestinationPath $zip -Force
+          Write-Output "Packaged: $zip"
 
-      - name: Upload windows artifact
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: plugin-windows
-          path: |
-            build/plugin-windows-*.zip
-            build/**/*.dll
+          name: plugin-${{ matrix.os }}
+          path: build/plugin-*.zip
+          if-no-files-found: error
 
   publish:
     name: Create Release and Upload Assets
     runs-on: ubuntu-latest
-    needs: [ build-macos, build-windows ]
+    needs: [ build ]
+    permissions:
+      contents: write
     steps:
-      - name: Download macOS artifact
+      - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: plugin-macos
+          path: dist
+          merge-multiple: true
 
-      - name: Download windows artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: plugin-windows
+      - name: List artifacts
+        run: ls -laR dist
 
-      - name: List workspace
-        run: |
-          echo "Workspace contents:"
-          ls -la
-          ls -la */** || true
-
-      - name: Create GitHub release (draft)
-        id: create_release
-        uses: actions/create-release@v1
+      - name: Create draft GitHub release with assets
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          release_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
           draft: true
           prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: dist/plugin-*.zip
 
-      - name: Upload macOS zip to release
-        if: ${{ steps.create_release.outputs.upload_url != '' }}
-        uses: softprops/action-upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./plugin-macos-*.zip
-          asset_name: plugin-macos-${{ github.ref_name }}.zip
-          asset_content_type: application/zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload windows zip to release
-        uses: softprops/action-upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./plugin-windows-*.zip
-          asset_name: plugin-windows-${{ github.ref_name }}.zip
-          asset_content_type: application/zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+      # Gumroad upload is skipped unless both secrets are configured.
+      # NOTE: the `secrets` context is NOT available in step-level `if:` conditions,
+      # so the check must happen inside the script via env vars.
       - name: Optionally upload to Gumroad
-        if: ${{ secrets.GUMROAD_PRODUCT_ID && secrets.GUMROAD_ACCESS_TOKEN }}
+        env:
+          GUMROAD_PRODUCT_ID: ${{ secrets.GUMROAD_PRODUCT_ID }}
+          GUMROAD_ACCESS_TOKEN: ${{ secrets.GUMROAD_ACCESS_TOKEN }}
         run: |
-          echo "Uploading to Gumroad (product: $GUMROAD_PRODUCT_ID)..."
-          # This uses the Gumroad API to create a new version with the asset; adjust as needed.
-          ZIPFILE=$(ls -1 plugin-*-*.zip | head -n1)
+          set -euo pipefail
+          if [ -z "${GUMROAD_PRODUCT_ID:-}" ] || [ -z "${GUMROAD_ACCESS_TOKEN:-}" ]; then
+            echo "Gumroad secrets not configured; skipping upload."
+            exit 0
+          fi
+          ZIPFILE=$(ls -1 dist/plugin-*.zip | head -n1 || true)
           if [ -z "$ZIPFILE" ]; then
             echo "No zip file to upload"
             exit 0
           fi
-          echo "Uploading $ZIPFILE"
-          # Create a new version for the product and attach the file
-          curl -s -X POST "https://api.gumroad.com/v2/products/$GUMROAD_PRODUCT_ID/versions" \
+          echo "Uploading $ZIPFILE to Gumroad product $GUMROAD_PRODUCT_ID"
+          curl -sS -X POST "https://api.gumroad.com/v2/products/$GUMROAD_PRODUCT_ID/versions" \
             -F "access_token=$GUMROAD_ACCESS_TOKEN" \
             -F "file=@$ZIPFILE" \
             -F "release_notes=Automated release ${{ github.ref_name }} from CI"
-        env:
-          GUMROAD_PRODUCT_ID: ${{ secrets.GUMROAD_PRODUCT_ID }}
-          GUMROAD_ACCESS_TOKEN: ${{ secrets.GUMROAD_ACCESS_TOKEN }}
 
       - name: Release summary
-        run: |
-          echo "Draft release created with tag ${{ github.ref_name }}. Check Actions log for uploaded assets."
+        run: echo "Draft release ${{ github.ref_name }} created. Review and publish it manually."

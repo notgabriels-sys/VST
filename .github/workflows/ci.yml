@@ -11,6 +11,7 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
 
@@ -20,41 +21,54 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install CMake
-        uses: lukka/get-cmake@v2
+      # CMake is preinstalled on GitHub-hosted runners; no install step needed.
+      - name: Show CMake version
+        shell: bash
+        run: cmake --version
 
       - name: Configure
+        shell: bash
         run: |
-          mkdir -p build
-          cd build
           if [ "${{ matrix.os }}" = "macos-latest" ]; then
-            cmake .. -G "Xcode" -DCMAKE_BUILD_TYPE=Release
+            cmake -S . -B build -G "Xcode"
           else
-            cmake .. -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+            cmake -S . -B build
           fi
 
       - name: Build
+        shell: bash
+        run: cmake --build build --config Release --parallel
+
+      - name: Run behavioural tests
+        shell: bash
         run: |
-          cd build
-          cmake --build . --config Release --parallel
+          set -euo pipefail
+          # Locate the console app: Xcode and MSVC put it in different places.
+          BIN=$(find build -type f -name 'GranularFreezeTests' -o -type f -name 'GranularFreezeTests.exe' | head -n1)
+          if [ -z "$BIN" ]; then
+            echo "test binary not found under build/"; exit 1
+          fi
+          echo "running $BIN"
+          "$BIN"
 
       - name: Package (macOS)
         if: matrix.os == 'macos-latest'
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
           cd build
-          echo "Looking for macOS plugin artifacts..."
-          ls -la || true
-          # collect vst3 and component bundles
-          PLUGS=$(find . -type d -name "*.vst3" -o -type d -name "*.component" || true)
-          if [ -z "$PLUGS" ]; then
+          # PRODUCT_NAME contains a space ("Granular Freeze"), so an unquoted
+          # $PLUGS word-splits the bundle paths and zip sees "Granular" and
+          # "Freeze.vst3" as separate, nonexistent files. Hand the paths to zip
+          # via -exec so find does the quoting.
+          if [ "$(find . \( -type d -name '*.vst3' -o -type d -name '*.component' \) | wc -l)" -eq 0 ]; then
             echo "No macOS plugin bundles found in build/"
-          else
-            ZIPNAME=plugin-macos-${{ github.run_id }}.zip
-            echo "Zipping: $PLUGS -> $ZIPNAME"
-            zip -r "$ZIPNAME" $PLUGS
-            echo "Packaged: $(pwd)/$ZIPNAME"
+            exit 1
           fi
+          ZIPNAME=plugin-macos-${{ github.run_id }}.zip
+          find . \( -type d -name '*.vst3' -o -type d -name '*.component' \) -exec zip -ryq "$ZIPNAME" {} +
+          echo "Packaged: $(pwd)/$ZIPNAME"
+          unzip -l "$ZIPNAME" | tail -5
 
       - name: Package (Windows)
         if: matrix.os == 'windows-latest'
@@ -62,10 +76,10 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           Set-Location -Path build
-          $dlls = Get-ChildItem -Path . -Include *.dll -Recurse -File -ErrorAction SilentlyContinue
-          if ($dlls) {
+          $vst3 = Get-ChildItem -Path . -Include *.vst3 -Recurse -ErrorAction SilentlyContinue
+          if ($vst3) {
             $zip = "plugin-windows-${{ github.run_id }}.zip"
-            Compress-Archive -Path $dlls -DestinationPath $zip -Force
+            Compress-Archive -Path $vst3 -DestinationPath $zip -Force
             Write-Output "Packaged: $zip"
           } else {
             Write-Output "No Windows artifacts found"
@@ -77,9 +91,7 @@ jobs:
           name: plugin-artifacts-${{ matrix.os }}
           path: |
             build/*.zip
-            build/*.vst3
-            build/*.component
-            build/*.dll
+          if-no-files-found: warn
 
-  # Notes: code-signing and notarization steps are intentionally omitted here and should be added
-  # after you provide signing secrets. See docs/CI_SECRETS.md for variables and instructions.
+# Notes: code-signing and notarization steps are intentionally omitted here and should be added
+# after you provide signing secrets. See docs/CI_SECRETS.md for variables and instructions.
