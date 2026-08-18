@@ -45,8 +45,12 @@ void GranularFreezeAudioProcessor::prepareToPlay (double sampleRate, int samples
     writePosition = 0;
     readPosition = 0.0;
 
-    // Crossfade: default 30 ms
-    const double crossfadeMs = 30.0;
+    // Seed the crossfade length from the actual parameter rather than a
+    // hardcoded 30 ms, so a session restored with a different crossfade time is
+    // correct on the very first block instead of only after processBlock
+    // recomputes it.
+    const auto* crossfadeMsVal = apvts.getRawParameterValue ("crossfadeMs");
+    const double crossfadeMs = crossfadeMsVal != nullptr ? (double) crossfadeMsVal->load() : 30.0;
     crossfadeSamples = static_cast<int> (std::max (1.0, std::round (crossfadeMs * 0.001 * currentSampleRate)));
     crossfadePos = 0;
     crossfadeDir = None;
@@ -58,9 +62,16 @@ void GranularFreezeAudioProcessor::releaseResources() {}
 
 bool GranularFreezeAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-    // Support only stereo for now
+    // Support only stereo for now.
     if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
         return false;
+
+    // The input set was never checked, so a host could negotiate a mismatched
+    // layout (e.g. mono in / stereo out) that the processing loop does not
+    // handle. This is an in-place effect: input and output must match.
+    if (layouts.getMainInputChannelSet() != layouts.getMainOutputChannelSet())
+        return false;
+
     return true;
 }
 

@@ -43,7 +43,23 @@ void GranularFreezeAudioProcessorEditor::paint (juce::Graphics& g)
 void GranularFreezeAudioProcessorEditor::resized()
 {
     auto area = getLocalBounds().reduced (12);
+    area.removeFromTop (20); // leave room for the title drawn in paint()
+
     auto top = area.removeFromTop (36);
     freezeButton.setBounds (top.removeFromLeft (120).reduced (6));
-    pitchSlider.setBounds (area.removeFromTop (40).removeFromLeft (260).reduced (6));
+
+    // Both labels are attachToComponent(..., onLeft = true), so each slider has
+    // to be indented or the label is drawn off the left edge.
+    const int labelWidth = 80;
+
+    auto pitchRow = area.removeFromTop (40).reduced (6);
+    pitchRow.removeFromLeft (labelWidth);
+    pitchSlider.setBounds (pitchRow);
+
+    // crossfadeSlider was created, made visible and attached to the parameter,
+    // but never given bounds -- so it rendered at zero size and the crossfade
+    // time could not be adjusted from the UI at all.
+    auto crossfadeRow = area.removeFromTop (40).reduced (6);
+    crossfadeRow.removeFromLeft (labelWidth);
+    crossfadeSlider.setBounds (crossfadeRow);
 }
