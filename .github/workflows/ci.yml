@@ -27,18 +27,56 @@ jobs:
         run: |
           mkdir -p build
           cd build
-          cmake .. -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+          if [ "${{ matrix.os }}" = "macos-latest" ]; then
+            cmake .. -G "Xcode" -DCMAKE_BUILD_TYPE=Release
+          else
+            cmake .. -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+          fi
 
       - name: Build
         run: |
           cd build
           cmake --build . --config Release --parallel
 
+      - name: Package (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          set -e
+          cd build
+          echo "Looking for macOS plugin artifacts..."
+          ls -la || true
+          # collect vst3 and component bundles
+          PLUGS=$(find . -type d -name "*.vst3" -o -type d -name "*.component" || true)
+          if [ -z "$PLUGS" ]; then
+            echo "No macOS plugin bundles found in build/"
+          else
+            ZIPNAME=plugin-macos-${{ github.run_id }}.zip
+            echo "Zipping: $PLUGS -> $ZIPNAME"
+            zip -r "$ZIPNAME" $PLUGS
+            echo "Packaged: $(pwd)/$ZIPNAME"
+          fi
+
+      - name: Package (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location -Path build
+          $dlls = Get-ChildItem -Path . -Include *.dll -Recurse -File -ErrorAction SilentlyContinue
+          if ($dlls) {
+            $zip = "plugin-windows-${{ github.run_id }}.zip"
+            Compress-Archive -Path $dlls -DestinationPath $zip -Force
+            Write-Output "Packaged: $zip"
+          } else {
+            Write-Output "No Windows artifacts found"
+          }
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: plugin-artifacts-${{ matrix.os }}
           path: |
+            build/*.zip
             build/*.vst3
             build/*.component
             build/*.dll
