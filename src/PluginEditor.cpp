@@ -6,16 +6,6 @@ GranularFreezeAudioProcessorEditor::GranularFreezeAudioProcessorEditor (Granular
     // Freeze button
     addAndMakeVisible (freezeButton);
     freezeButton.setClickingTogglesState (true);
-    if (audioProcessor.getFreezeParameter())
-    {
-        freezeButton.onClick = [this]
-        {
-            auto* param = audioProcessor.getFreezeParameter();
-            if (param) param->setValueNotifyingHost (freezeButton.getToggleState() ? 1.0f : 0.0f);
-        };
-        // Initialize UI state from parameter
-        freezeButton.setToggleState (audioProcessor.getFreezeParameter()->get() > 0.5f, juce::dontSendNotification);
-    }
 
     // Pitch slider
     addAndMakeVisible (pitchSlider);
@@ -25,15 +15,9 @@ GranularFreezeAudioProcessorEditor::GranularFreezeAudioProcessorEditor (Granular
     addAndMakeVisible (pitchLabel);
     pitchLabel.attachToComponent (&pitchSlider, true);
 
-    if (audioProcessor.getPitchParameter())
-    {
-        pitchSlider.onValueChange = [this]
-        {
-            auto* p = audioProcessor.getPitchParameter();
-            if (p) p->setValueNotifyingHost ((float) pitchSlider.getValue());
-        };
-        pitchSlider.setValue (audioProcessor.getPitchParameter()->get(), juce::dontSendNotification);
-    }
+    // Attach UI to parameters via APVTS
+    freezeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "freeze", freezeButton);
+    pitchAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "pitch", pitchSlider);
 
     setSize (420, 160);
 }

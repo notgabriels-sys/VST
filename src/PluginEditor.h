@@ -20,5 +20,9 @@ private:
     juce::Slider pitchSlider;
     juce::Label pitchLabel {"pitchLabel", "Pitch"};
 
+    // APVTS attachments
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> freezeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> pitchAttachment;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GranularFreezeAudioProcessorEditor)
 };

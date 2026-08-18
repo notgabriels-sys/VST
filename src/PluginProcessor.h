@@ -27,14 +27,11 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
-    // Expose parameter accessors for simple editor wiring
-    juce::AudioParameterBool* getFreezeParameter() { return freezeParam; }
-    juce::AudioParameterFloat* getPitchParameter() { return pitchParam; }
+    // Parameters are managed via AudioProcessorValueTreeState for automation and persistence
+    juce::AudioProcessorValueTreeState apvts;
 
 private:
-    // Parameters (simple, using legacy addParameter API for a quick prototype)
-    juce::AudioParameterBool* freezeParam = nullptr;    // when true, stop writing to buffer and play back
-    juce::AudioParameterFloat* pitchParam = nullptr;    // coarse pitch: 0.5x - 2.0x
+    // Note: parameters are exposed through `apvts`; legacy raw pointers removed.
 
     // Circular buffer for live capture and freeze playback
     juce::AudioBuffer<float> circularBuffer;

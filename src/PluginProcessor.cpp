@@ -1,6 +1,16 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+// Parameter layout helper
+static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
+{
+    using APVTS = juce::AudioProcessorValueTreeState;
+    APVTS::ParameterLayout layout;
+    layout.add (std::make_unique<juce::AudioParameterBool> ("freeze", "Freeze", false));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("pitch", "Pitch", juce::NormalisableRange<float> (0.5f, 2.0f, 0.01f), 1.0f));
+    return layout;
+}
+
 GranularFreezeAudioProcessor::GranularFreezeAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
      : AudioProcessor (BusesProperties()
@@ -10,12 +20,11 @@ GranularFreezeAudioProcessor::GranularFreezeAudioProcessor()
 #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
 #endif
-                       )
+                       ),
+       apvts (*this, nullptr, "PARAMS", createParameterLayout())
 #endif
 {
-    // Create parameters
-    addParameter (freezeParam = new juce::AudioParameterBool ("freeze", "Freeze", false));
-    addParameter (pitchParam = new juce::AudioParameterFloat ("pitch", "Pitch", 0.5f, 2.0f, 1.0f));
+    // Parameters are created via apvts; no legacy addParameter calls here.
 }
 
 GranularFreezeAudioProcessor::~GranularFreezeAudioProcessor() {}
@@ -72,8 +81,11 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
     const int numSamples = buffer.getNumSamples();
     const int numChannels = juce::jmin (circularBuffer.getNumChannels(), buffer.getNumChannels());
 
-    const bool frozen = freezeParam ? (freezeParam->get() > 0.5f) : false;
-    const float pitch = pitchParam ? pitchParam->get() : 1.0f;
+    // Read parameter values from APVTS
+    auto* freezeVal = apvts.getRawParameterValue ("freeze");
+    auto* pitchVal = apvts.getRawParameterValue ("pitch");
+    const bool frozen = freezeVal ? (*freezeVal > 0.5f) : false;
+    const float pitch = pitchVal ? *pitchVal : 1.0f;
 
     // Detect freeze change and start crossfade
     if (frozen != prevFreezeState)
@@ -198,21 +210,20 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
         buffer.clear (ch, 0, numSamples);
 }
 
-juce::AudioProcessorEditor* GranularFreezeAudioProcessor::createEditor() { return new juce::GenericAudioProcessorEditor (*this); }
+juce::AudioProcessorEditor* GranularFreezeAudioProcessor::createEditor() { return new GranularFreezeAudioProcessorEditor (*this); }
 
 void GranularFreezeAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    // Simple state serialization: two floats (freeze as 0/1, pitch)
-    juce::MemoryOutputStream mos (destData, true);
-    mos.writeBool (freezeParam ? freezeParam->get() : false);
-    mos.writeFloat (pitchParam ? pitchParam->get() : 1.0f);
+    // Let APVTS handle state serialization
+    if (auto xml = apvts.copyState().createXml())
+        copyXmlToBinary (*xml, destData);
 }
 
 void GranularFreezeAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    juce::MemoryInputStream mis (data, static_cast<size_t> (sizeInBytes), false);
-    if (freezeParam) freezeParam->setValueNotifyingHost (mis.readBool() ? 1.0f : 0.0f);
-    if (pitchParam) pitchParam->setValueNotifyingHost (mis.readFloat());
+    std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
+    if (xmlState != nullptr)
+        apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
 }
 
 // This creates new instances of the plugin
