@@ -135,11 +135,31 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
         prevFreezeState = frozen;
     }
 
+    // These are per-instance members, but the loop below advances them once per
+    // CHANNEL. Without resetting, channel 1 would resume from wherever channel 0
+    // finished: writePosition would drift a block further each time (destroying
+    // the stereo image), crossfadePos would count down twice as fast, and once
+    // crossfadeDir was cleared the later channels would skip the fade entirely
+    // and hard-switch. Snapshot here, restore per channel, and let the final
+    // channel leave the committed values -- every channel advances identically,
+    // so the post-loop state is correct.
+    const int       entryWritePosition  = writePosition;
+    const double    entryReadPosition   = readPosition;
+    const int       entryCrossfadePos   = crossfadePos;
+    const CrossfadeDir entryCrossfadeDir = crossfadeDir;
+    const bool      entryFreezeWriting  = freezeWriting;
+
     for (int ch = 0; ch < numChannels; ++ch)
     {
         auto* circularData = circularBuffer.getWritePointer (ch);
         auto* inData = buffer.getReadPointer (ch);
         auto* outData = buffer.getWritePointer (ch);
+
+        writePosition = entryWritePosition;
+        readPosition  = entryReadPosition;
+        crossfadePos  = entryCrossfadePos;
+        crossfadeDir  = entryCrossfadeDir;
+        freezeWriting = entryFreezeWriting;
 
         if (crossfadeDir == None)
         {
