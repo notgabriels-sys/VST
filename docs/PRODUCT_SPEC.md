@@ -1,44 +1,68 @@
-Granular Freeze — Product Specification (v0.1)
+# Granular Freeze - Product Specification
 
-Summary
-- Live performance and sound-design plugin that captures a short buffer of incoming audio (freeze) and re-synthesizes it via a granular engine.
-- Focus: immediacy and hands-on performance in Ableton Live and Bitwig. Fast controls for freeze, grain size, density, position, pitch, feedback and freeze morph.
+## Status of this document
 
-Core features (initial)
-- Freeze/hold toggle with adjustable buffer length (50ms — 10s)
-- Grain Size (0.5ms — 200ms), Density (0 — 200 grains/s), Position (scrub within buffer)
-- Pitch control with +/- 48 semitones (for creative shifts)
-- Feedback and DPR (crossfade) to avoid clicks
-- Freeze morph / continuous scatter control for evolving textures
-- 8 quick slots for performance recall, full preset system
-- CPU-friendly defaults + quality mode toggle for heavier use
+This describes the intended granular product, not the contents of the current
+engineering candidate. Internal version `0.1.1` is a stereo freeze/looper
+prototype. It has an eight-second capture buffer, crossfaded looping, Freeze,
+0.5x-2.0x pitch-rate control, and a 1-500 ms crossfade control.
 
-UI / UX
-- Compact, performance skin (large freeze button, encoders for grain/density/pitch/position)
-- Visual buffer waveform with play-head and grain density overlay
-- MIDI-mappable encoders and buttons for live control
+The candidate does not yet have a granular engine, independent time-stretch,
+grain size/density/position controls, feedback, scatter, presets, a waveform
+display, or performance slots. It has not been evaluated by ear in a DAW and
+is not a production-ready paid product.
 
-Presets
-- Example bank: "FreezePads", "GlitchPerc", "AmbientChains", "DroneFreeze", "FieldTextures"
+## Intended product
 
-Pricing & Licensing
-- Intro price: €29 (early access) → €49 full launch
-- Gumroad: single-license key delivery; optionally issue time-limited free beta keys
+### Summary
 
-Milestones
-- Week 1: Product spec, repo skeleton, CI + basic pass-through plugin (this stage)
-- Week 2: Implement buffer + freeze control, basic granular playback (prototype)
-- Week 3: UI controls, preset system, example presets
-- Week 4: Beta testing, DAW compatibility testing (Ableton, Bitwig), performance tuning
-- Week 5: CI packaging, signing, prepare marketing assets + demo audio/video
-- Week 6: Release (GitHub Release + Gumroad)
+- Live performance and sound-design plugin that captures incoming audio and
+  resynthesizes it with a granular engine.
+- Focus on immediate, hands-on use in Ableton Live and Bitwig.
 
-Acceptance criteria
-- Plugin builds on macOS and Windows producing VST3 (+AU for mac)
-- Freeze and granular playback is audible and stable at low CPU settings
-- Plugin loads in Ableton Live (macOS AU/VST3) and Bitwig (VST3)
-- Installer or zip artifact is produced by CI for both platforms
+### Core features
 
-Optional future features
-- Multi-band freezing, spectral-granular mode, Ableton Link sync, AAX port
+- Freeze/hold with adjustable 50 ms-10 s buffer
+- Grain size 0.5-200 ms, density 0-200 grains/s, and buffer position
+- Pitch range of +/-48 semitones
+- Feedback and crossfade controls
+- Continuous freeze-morph or scatter control
+- Eight performance-recall slots and a preset system
+- CPU-friendly defaults plus an optional higher-quality mode
 
+### UI and presets
+
+- Compact performance interface with a large Freeze button and direct grain,
+  density, pitch, and position controls
+- Buffer waveform with playhead and grain-density overlay
+- MIDI-mappable controls
+- Example banks for pads, percussion, ambience, drones, and field recordings
+
+### Optional future work
+
+- Multiband freezing
+- Spectral-granular mode
+- Ableton Link synchronization
+- AAX format
+
+## Intended acceptance criteria
+
+- macOS and Windows builds produce VST3, plus AU on macOS.
+- Freeze and actual granular playback are audible and stable at acceptable CPU
+  settings.
+- Exact release assets load in the target DAWs.
+- CI produces validated archives for both platforms.
+- Production artifacts are signed; macOS is notarized.
+
+The current candidate meets only part of this list. Offline signal tests and a
+successful build do not satisfy the audible granular-playback or DAW-host
+criteria.
+
+## Commercial planning
+
+The original proposal considered a EUR 29 early-access price and EUR 49 full
+launch, with Gumroad license delivery. These are planning notes, not approval
+to list, sell, or publish the prototype. Commercial distribution requires a
+documented JUCE licensing basis, completed product scope, production signing,
+DAW validation, final pricing and listing approval, and manual upload of the
+approved files through Gumroad's authenticated product Content UI.

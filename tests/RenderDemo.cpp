@@ -4,7 +4,7 @@
 // files to listen to, plus numbers that describe what the freeze is doing:
 // loop-seam continuity, DC offset, peak/RMS, and spectral centroid drift.
 
-#include <JuceHeader.h>
+#include <juce_audio_formats/juce_audio_formats.h>
 #include "../src/PluginProcessor.h"
 
 #include <cmath>

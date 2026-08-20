@@ -1,19 +1,20 @@
 cmake_minimum_required(VERSION 3.22)
 # VERSION is required: juce_add_plugin needs PROJECT_VERSION to derive the
 # plugin version, and errors out without it.
-project(GranularFreezePlugin VERSION 0.1.0)
+project(GranularFreezePlugin VERSION 0.1.1)
 
-# This CMake skeleton expects JUCE to be available as a submodule or installed
-# If JUCE is not provided via JUCE_SOURCE_DIR or as a submodule, use CMake FetchContent
-# to download a known JUCE release for CI convenience. See docs/CI_SECRETS.md for
-# alternate approaches (submodule or preinstalled JUCE).
+# Callers may provide a local JUCE checkout through
+# GRANULAR_FREEZE_JUCE_SOURCE_DIR. Otherwise, use FetchContent below to fetch
+# the pinned JUCE release.
 
 include(FetchContent)
 
-# Allow the environment or callers to override JUCE_SOURCE_DIR/JUCE_DIR
-if(DEFINED JUCE_SOURCE_DIR)
-  message(STATUS "Using JUCE from JUCE_SOURCE_DIR=${JUCE_SOURCE_DIR}")
-  add_subdirectory(${JUCE_SOURCE_DIR} JUCE)
+# Use a project-specific override name. FetchContent reserves and populates
+# JUCE_SOURCE_DIR internally, so treating that variable as user input makes a
+# second configure mistake the cached download for an external checkout.
+if(DEFINED GRANULAR_FREEZE_JUCE_SOURCE_DIR)
+  message(STATUS "Using JUCE from GRANULAR_FREEZE_JUCE_SOURCE_DIR=${GRANULAR_FREEZE_JUCE_SOURCE_DIR}")
+  add_subdirectory(${GRANULAR_FREEZE_JUCE_SOURCE_DIR} JUCE)
 else()
   message(STATUS "JUCE not provided; fetching JUCE via FetchContent (this may increase CI time)")
   FetchContent_Declare(
@@ -32,5 +33,8 @@ endif()
 # Plugin target
 add_subdirectory(src)
 
-# Offline behavioural tests (see tests/PluginTests.cpp)
-add_subdirectory(tests)
+# Offline behavioural tests and the optional render utility.
+option(GRANULAR_FREEZE_BUILD_TESTS "Build offline behavioural tests" ON)
+if(GRANULAR_FREEZE_BUILD_TESTS)
+  add_subdirectory(tests)
+endif()

@@ -5,7 +5,6 @@
 // actually holds audio, whether the stereo channels stay aligned, and whether
 // the crossfade is free of discontinuities.
 
-#include <JuceHeader.h>
 #include "../src/PluginProcessor.h"
 
 #include <cmath>
