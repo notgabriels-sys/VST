@@ -3,9 +3,72 @@
 #include "PluginParameters.h"
 
 #include <cmath>
+#include <cstdint>
+#include <limits>
 
 namespace
 {
+// Hosts can report corrupt or merely unrealistic preparation values. 384 kHz
+// covers a practical upper edge for audio production while bounding the
+// eight-second stereo capture allocation. Non-finite/non-positive rates fall
+// back to 44.1 kHz; larger finite rates clamp to this ceiling.
+constexpr double defaultSampleRate = 44100.0;
+constexpr double maximumSupportedSampleRate = 384000.0;
+constexpr double captureSeconds = 8.0;
+constexpr int defaultCaptureSamples = 352800;
+
+// Host buffers larger than this are already processed in bounded chunks, so a
+// larger preparation hint must not enlarge audio-thread scratch storage.
+constexpr int maximumPreparedChunkSamples = 16384;
+
+double sanitisePreparationSampleRate (double requestedSampleRate) noexcept
+{
+    if (! std::isfinite (requestedSampleRate) || requestedSampleRate <= 0.0)
+        return defaultSampleRate;
+
+    return juce::jmin (requestedSampleRate, maximumSupportedSampleRate);
+}
+
+int checkedCeilToPositiveInt (double value, int fallback) noexcept
+{
+    const double intMaximum = (double) std::numeric_limits<int>::max();
+    if (! std::isfinite (value) || value <= 0.0 || value > intMaximum)
+        return fallback;
+
+    const double ceiled = std::ceil (value);
+    if (! std::isfinite (ceiled) || ceiled < 1.0 || ceiled > intMaximum)
+        return fallback;
+
+    const auto wide = (std::int64_t) ceiled;
+    if (wide < 1 || wide > (std::int64_t) std::numeric_limits<int>::max())
+        return fallback;
+
+    return (int) wide;
+}
+
+int checkedRoundToPositiveInt (double value) noexcept
+{
+    const double intMaximum = (double) std::numeric_limits<int>::max();
+    if (! std::isfinite (value) || value <= 0.0)
+        return 1;
+    if (value >= intMaximum)
+        return std::numeric_limits<int>::max();
+
+    const double rounded = std::round (value);
+    if (! std::isfinite (rounded) || rounded < 1.0)
+        return 1;
+    if (rounded >= intMaximum)
+        return std::numeric_limits<int>::max();
+
+    const auto wide = (std::int64_t) rounded;
+    if (wide < 1)
+        return 1;
+    if (wide > (std::int64_t) std::numeric_limits<int>::max())
+        return std::numeric_limits<int>::max();
+
+    return (int) wide;
+}
+
 bool isStableParameterId (const juce::String& id)
 {
     return id == gf::parameters::freezeId
@@ -71,11 +134,14 @@ GranularFreezeAudioProcessor::~GranularFreezeAudioProcessor() {}
 
 void GranularFreezeAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    currentSampleRate = std::isfinite (sampleRate) && sampleRate > 0.0
-        ? sampleRate
-        : 44100.0;
-    preparedBlockSize = juce::jmax (1, samplesPerBlock);
-    maxBufferSize = juce::jmax (1, (int) std::ceil (8.0 * currentSampleRate));
+    currentSampleRate = sanitisePreparationSampleRate (sampleRate);
+    const int positiveBlockSize = samplesPerBlock > 0 ? samplesPerBlock : 1;
+    preparedBlockSize = juce::jmin (
+        positiveBlockSize, maximumPreparedChunkSamples);
+
+    const double requestedCaptureSamples = captureSeconds * currentSampleRate;
+    maxBufferSize = checkedCeilToPositiveInt (
+        requestedCaptureSamples, defaultCaptureSamples);
     circularBuffer.setSize (2, maxBufferSize, false, false, true);
     wetScratch.setSize (2, preparedBlockSize, false, false, true);
     circularBuffer.clear();
@@ -130,11 +196,15 @@ void GranularFreezeAudioProcessor::beginTransition (float targetMix,
     transitionTargetMix = juce::jlimit (0.0f, 1.0f, targetMix);
     transitionPosition = 0;
 
-    const int fullScaleSamples = juce::jmax (
-        1, (int) std::round ((double) crossfadeMs * 0.001 * currentSampleRate));
+    const double requestedFullScaleSamples = (double) crossfadeMs
+                                           * 0.001 * currentSampleRate;
+    const int fullScaleSamples = checkedRoundToPositiveInt (
+        requestedFullScaleSamples);
     const float distance = std::abs (transitionTargetMix - transitionStartMix);
-    transitionLength = juce::jmax (
-        1, (int) std::round ((double) fullScaleSamples * (double) distance));
+    const double requestedTransitionSamples = (double) fullScaleSamples
+                                            * (double) distance;
+    transitionLength = checkedRoundToPositiveInt (
+        requestedTransitionSamples);
     transitionActive = true;
 }
 
@@ -237,7 +307,7 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
     const int numSamples = buffer.getNumSamples();
     const int numChannels = buffer.getNumChannels();
 
-    for (int offset = 0; offset < numSamples; offset += preparedBlockSize)
+    for (int offset = 0; offset < numSamples;)
     {
         const int chunkSamples = juce::jmin (
             preparedBlockSize, numSamples - offset);
@@ -279,9 +349,14 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
                 circularBuffer.setSample (0, writePosition, inputLeft);
                 circularBuffer.setSample (1, writePosition, inputRight);
                 writePosition = (writePosition + 1) % maxBufferSize;
-                validSamples = juce::jmin (validSamples + 1, maxBufferSize);
+                if (validSamples < maxBufferSize)
+                    ++validSamples;
             }
         }
+
+        // chunkSamples is positive and no larger than numSamples - offset, so
+        // this addition cannot exceed numSamples or overflow int.
+        offset += chunkSamples;
     }
 
     for (int channel = 2; channel < numChannels; ++channel)

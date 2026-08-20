@@ -603,6 +603,46 @@ std::array<std::vector<float>, 2> renderPartitionedFreeze (
     rig.runArbitrary (silence, silence, hostBlockSize, &output[0], &output[1]);
     return output;
 }
+
+std::vector<float> renderPreparationBoundary (double requestedSampleRate,
+                                              int requestedPreparedBlockSize,
+                                              float crossfadeMs = 500.0f)
+{
+    GranularFreezeAudioProcessor processor;
+    processor.setPlayConfigDetails (2, 2, 44100.0, 64);
+    processor.prepareToPlay (requestedSampleRate, requestedPreparedBlockSize);
+    setParam (processor, "freeze", 0.0f);
+    setParam (processor, "crossfadeMs", crossfadeMs);
+    setParam (processor, "grainSizeMs", 5.0f);
+    setParam (processor, "densityHz", 20.0f);
+    setParam (processor, "position", 1.0f);
+
+    juce::MidiBuffer midi;
+    juce::AudioBuffer<float> capture (2, 32);
+    for (int sample = 0; sample < capture.getNumSamples(); ++sample)
+    {
+        const float value = -0.7f + 0.04f * (float) sample;
+        capture.setSample (0, sample, value);
+        capture.setSample (1, sample, value);
+    }
+    processor.processBlock (capture, midi);
+
+    setParam (processor, "freeze", 1.0f);
+    juce::AudioBuffer<float> frozen (2, 512);
+    for (int sample = 0; sample < frozen.getNumSamples(); ++sample)
+    {
+        frozen.setSample (0, sample, 0.37f);
+        frozen.setSample (1, sample, 0.37f);
+    }
+    midi.clear();
+    processor.processBlock (frozen, midi);
+
+    std::vector<float> output;
+    output.reserve ((size_t) frozen.getNumSamples());
+    for (int sample = 0; sample < frozen.getNumSamples(); ++sample)
+        output.push_back (frozen.getSample (0, sample));
+    return output;
+}
 } // namespace
 
 int main()
@@ -1018,6 +1058,47 @@ int main()
                "max|L| = " + juce::String (maxAbs (l)));
     }
 
+    // Host preparation values are untrusted. Non-finite/non-positive rates use
+    // the normal fallback, finite rates above the practical ceiling clamp to
+    // that ceiling, and oversized block hints remain behaviorally bounded.
+    {
+        constexpr double practicalMaximumSampleRate = 384000.0;
+        constexpr int largePreparedBlockRequest = 1 << 20;
+        const auto fallback = renderPreparationBoundary (44100.0, 64);
+        const auto nanRate = renderPreparationBoundary (
+            std::numeric_limits<double>::quiet_NaN(), 64);
+        const auto positiveInfinityRate = renderPreparationBoundary (
+            std::numeric_limits<double>::infinity(), 64);
+        const auto negativeInfinityRate = renderPreparationBoundary (
+            -std::numeric_limits<double>::infinity(), 64);
+        check (nanRate == fallback
+               && positiveInfinityRate == fallback
+               && negativeInfinityRate == fallback,
+               "prepare: non-finite sample rates equal exact 44.1 kHz fallback");
+
+        const auto practicalMaximum = renderPreparationBoundary (
+            practicalMaximumSampleRate, 64);
+        const auto justAboveMaximum = renderPreparationBoundary (
+            std::nextafter (practicalMaximumSampleRate,
+                            std::numeric_limits<double>::infinity()), 64);
+        const auto doubleMaximum = renderPreparationBoundary (
+            std::numeric_limits<double>::max(), 64);
+        check (justAboveMaximum == practicalMaximum,
+               "prepare: first finite rate above ceiling clamps exactly");
+        check (doubleMaximum == practicalMaximum && allFinite (doubleMaximum),
+               "prepare: DBL_MAX clamps safely without narrowing overflow");
+
+        const auto normal64 = renderPreparationBoundary (48000.0, 64, 1.0f);
+        const auto normal512 = renderPreparationBoundary (48000.0, 512, 1.0f);
+        const auto oversizedPreparedBlock = renderPreparationBoundary (
+            48000.0, largePreparedBlockRequest, 1.0f);
+        check (normal64 == normal512 && maxAbs (normal512) > 0.05f,
+               "prepare: normal 48 kHz block behavior remains unchanged");
+        check (oversizedPreparedBlock == normal512
+               && allFinite (oversizedPreparedBlock),
+               "prepare: oversized samplesPerBlock stays bounded and sample-identical");
+    }
+
     // ------------------------------------------------------- Grain processor
     // Position must map to chronology, not physical circular-buffer indices.
     // Both controls are signal-bearing so a dry or silent implementation fails.
@@ -1110,6 +1191,43 @@ int main()
         n2.runConstant (2, 1.0f, 1.0f, &n2Dry);
         checkSequence (n2Dry, { 1.0f, 0.0f },
                        "transition: live-to-wet N=2 exact dry coefficients");
+
+        Rig n1Lifecycle (1000.0, 64);
+        Rig n1FrozenControl (1000.0, 64);
+        for (auto* rig : { &n1Lifecycle, &n1FrozenControl })
+        {
+            setParam (rig->proc, "crossfadeMs", 1.0f);
+            setParam (rig->proc, "grainSizeMs", 5.0f);
+            setParam (rig->proc, "densityHz", 20.0f);
+            setParam (rig->proc, "position", 1.0f);
+            rig->runConstant (10, -0.4f, -0.4f);
+            setParam (rig->proc, "freeze", 1.0f);
+        }
+
+        std::vector<float> n1FreezeSample;
+        n1Lifecycle.runConstant (1, 0.2f, 0.2f, &n1FreezeSample);
+        n1FrozenControl.runConstant (1, 0.2f, 0.2f);
+        checkSequence (n1FreezeSample, { 0.2f },
+                       "transition: full-distance N=1 freeze sample uses dry start");
+
+        setParam (n1Lifecycle.proc, "freeze", 0.0f);
+        std::vector<float> n1UnfreezeSample;
+        std::vector<float> n1FrozenControlSample;
+        n1Lifecycle.runConstant (1, 1.0f, 1.0f, &n1UnfreezeSample);
+        n1FrozenControl.runConstant (1, 1.0f, 1.0f, &n1FrozenControlSample);
+        check (n1UnfreezeSample == n1FrozenControlSample
+               && n1UnfreezeSample.size() == 1
+               && near (n1UnfreezeSample[0], -0.4f * hannAt (1, 5)),
+               "transition: full-distance N=1 unfreeze sample uses wet start");
+
+        n1Lifecycle.runConstant (2, 0.6f, 0.6f);
+        setParam (n1Lifecycle.proc, "freeze", 1.0f);
+        std::vector<float> n1RecapturedChronology;
+        n1Lifecycle.runConstant (5, 0.0f, 0.0f, &n1RecapturedChronology);
+        checkSequence (n1RecapturedChronology,
+                       { 0.0f, -0.4f * hannAt (1, 5),
+                         1.0f, 0.6f * hannAt (3, 5), 0.0f },
+                       "transition: N=1 post-sample endpoint captures exact chronology");
     }
 
     // The sample whose post-sample advance reaches fully live is the first
@@ -1145,6 +1263,26 @@ int main()
                && near (newest[14], 0.9f * hannAt (14, 20))
                && near (newest[15], 0.6f * hannAt (15, 20)),
                "transition: zero-distance reversal completes then captures without reset drift");
+
+        Rig preSampleReversal (4000.0, 64);
+        setParam (preSampleReversal.proc, "crossfadeMs", 1.0f);
+        setParam (preSampleReversal.proc, "grainSizeMs", 5.0f);
+        setParam (preSampleReversal.proc, "densityHz", 20.0f);
+        setParam (preSampleReversal.proc, "position", 1.0f);
+        preSampleReversal.runConstant (40, -0.4f, -0.4f);
+
+        juce::AudioBuffer<float> zeroSampleBlock (2, 0);
+        setParam (preSampleReversal.proc, "freeze", 1.0f);
+        preSampleReversal.processBuffer (zeroSampleBlock);
+        setParam (preSampleReversal.proc, "freeze", 0.0f);
+        preSampleReversal.processBuffer (zeroSampleBlock);
+        setParam (preSampleReversal.proc, "freeze", 1.0f);
+        std::vector<float> preservedViewOutput;
+        preSampleReversal.runConstant (20, 0.0f, 0.0f, &preservedViewOutput);
+        check (preservedViewOutput.size() == 20
+               && near (preservedViewOutput[10], -0.4f * hannAt (10, 20))
+               && maxAbs (preservedViewOutput) > 0.10f,
+               "transition: pre-sample zero-distance reversal preserves original frozen view");
     }
 
     // Reversing before fully live must preserve both the immutable view and
@@ -1152,8 +1290,9 @@ int main()
     // it must rejoin an always-frozen control at the same engine timeline.
     {
         Rig reversed (4000.0, 64);
+        Rig continuedLive (4000.0, 64);
         Rig control (4000.0, 64);
-        for (auto* rig : { &reversed, &control })
+        for (auto* rig : { &reversed, &continuedLive, &control })
         {
             setParam (rig->proc, "crossfadeMs", 10.0f);
             setParam (rig->proc, "grainSizeMs", 80.0f);
@@ -1164,20 +1303,48 @@ int main()
         }
 
         setParam (reversed.proc, "freeze", 0.0f);
+        setParam (continuedLive.proc, "freeze", 0.0f);
         std::vector<float> reversalLead;
+        std::vector<float> continuedLiveLead;
+        std::vector<float> controlLead;
         reversed.runConstant (10, 0.0f, 0.0f, &reversalLead);
-        control.runConstant (10, 0.0f, 0.0f);
+        continuedLive.runConstant (10, 0.0f, 0.0f, &continuedLiveLead);
+        control.runConstant (10, 0.0f, 0.0f, &controlLead);
         setParam (reversed.proc, "freeze", 1.0f);
 
         std::vector<float> reversedOutput;
+        std::vector<float> continuedLiveBoundary;
         std::vector<float> controlOutput;
-        reversed.runConstant (128, 0.0f, 0.0f, &reversedOutput);
-        control.runConstant (128, 0.0f, 0.0f, &controlOutput);
-        const float rapidToggleStep = maxDelta (reversedOutput, 0, reversedOutput.size());
-        const float dryBaselineStep = maxDelta (controlOutput, 0, controlOutput.size());
-        check (rapidToggleStep < dryBaselineStep * 4.0f,
+        reversed.runConstant (1, 0.0f, 0.0f, &reversedOutput);
+        continuedLive.runConstant (1, 0.0f, 0.0f, &continuedLiveBoundary);
+        control.runConstant (1, 0.0f, 0.0f, &controlOutput);
+
+        check (reversalLead == continuedLiveLead
+               && reversedOutput == continuedLiveBoundary,
+               "processor: reversal first sample equals continue-live current mix");
+
+        const float reversalBoundaryStep = std::abs (
+            reversedOutput.front() - reversalLead.back());
+        const float continuedBoundaryStep = std::abs (
+            continuedLiveBoundary.front() - continuedLiveLead.back());
+        check (near (reversalBoundaryStep, continuedBoundaryStep),
+               "processor: reversal explicitly preserves cross-block boundary delta",
+               juce::String (reversalBoundaryStep) + " vs "
+                   + juce::String (continuedBoundaryStep));
+
+        reversed.runConstant (127, 0.0f, 0.0f, &reversedOutput);
+        control.runConstant (127, 0.0f, 0.0f, &controlOutput);
+        const float rapidToggleStep = std::max (
+            reversalBoundaryStep,
+            maxDelta (reversedOutput, 0, reversedOutput.size()));
+        const float controlBoundaryStep = std::abs (
+            controlOutput.front() - controlLead.back());
+        const float controlStep = std::max (
+            controlBoundaryStep,
+            maxDelta (controlOutput, 0, controlOutput.size()));
+        check (rapidToggleStep < controlStep * 4.0f,
                "processor: transition reversal has no endpoint jump",
-               juce::String (rapidToggleStep) + " vs " + juce::String (dryBaselineStep));
+               juce::String (rapidToggleStep) + " vs " + juce::String (controlStep));
         check (maxDifference (reversedOutput, controlOutput, 8) < 1.0e-6f,
                "processor: rapid reversal preserves active voices and frozen timeline");
         check (maxAbs (reversedOutput, 8) > 0.05f,
