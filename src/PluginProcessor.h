@@ -42,7 +42,12 @@ public:
     juce::AudioProcessorValueTreeState apvts;
 
 private:
-    // Note: parameters are exposed through `apvts`; legacy raw pointers removed.
+    std::atomic<float>* freezeParameter = nullptr;
+    std::atomic<float>* pitchParameter = nullptr;
+    std::atomic<float>* crossfadeMsParameter = nullptr;
+    std::atomic<float>* grainSizeMsParameter = nullptr;
+    std::atomic<float>* densityHzParameter = nullptr;
+    std::atomic<float>* positionParameter = nullptr;
 
     // Circular buffer for live capture and freeze playback
     juce::AudioBuffer<float> circularBuffer;

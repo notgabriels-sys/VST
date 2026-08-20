@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # VERSION is required: juce_add_plugin needs PROJECT_VERSION to derive the
 # plugin version, and errors out without it.
-project(GranularFreezePlugin VERSION 0.1.0)
+project(GranularFreezePlugin VERSION 0.2.0)
 
 # This CMake skeleton expects JUCE to be available as a submodule or installed
 # If JUCE is not provided via JUCE_SOURCE_DIR or as a submodule, use CMake FetchContent

@@ -1,17 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
-
-// Parameter layout helper
-static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
-{
-    using APVTS = juce::AudioProcessorValueTreeState;
-    APVTS::ParameterLayout layout;
-    layout.add (std::make_unique<juce::AudioParameterBool> ("freeze", "Freeze", false));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("pitch", "Pitch", juce::NormalisableRange<float> (0.5f, 2.0f, 0.01f), 1.0f));
-    // Crossfade time in milliseconds (for freeze/unfreeze smoothing)
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("crossfadeMs", "Crossfade (ms)", juce::NormalisableRange<float> (1.0f, 500.0f, 1.0f), 30.0f));
-    return layout;
-}
+#include "PluginParameters.h"
 
 GranularFreezeAudioProcessor::GranularFreezeAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -23,10 +12,15 @@ GranularFreezeAudioProcessor::GranularFreezeAudioProcessor()
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
 #endif
                        ),
-       apvts (*this, nullptr, "PARAMS", createParameterLayout())
+       apvts (*this, nullptr, gf::parameters::rootId, gf::parameters::createLayout())
 #endif
 {
-    // Parameters are created via apvts; no legacy addParameter calls here.
+    freezeParameter = apvts.getRawParameterValue (gf::parameters::freezeId);
+    pitchParameter = apvts.getRawParameterValue (gf::parameters::pitchId);
+    crossfadeMsParameter = apvts.getRawParameterValue (gf::parameters::crossfadeMsId);
+    grainSizeMsParameter = apvts.getRawParameterValue (gf::parameters::grainSizeMsId);
+    densityHzParameter = apvts.getRawParameterValue (gf::parameters::densityHzId);
+    positionParameter = apvts.getRawParameterValue (gf::parameters::positionId);
 }
 
 GranularFreezeAudioProcessor::~GranularFreezeAudioProcessor() {}
@@ -50,8 +44,9 @@ void GranularFreezeAudioProcessor::prepareToPlay (double sampleRate, int samples
     // hardcoded 30 ms, so a session restored with a different crossfade time is
     // correct on the very first block instead of only after processBlock
     // recomputes it.
-    const auto* crossfadeMsVal = apvts.getRawParameterValue ("crossfadeMs");
-    const double crossfadeMs = crossfadeMsVal != nullptr ? (double) crossfadeMsVal->load() : 30.0;
+    const double crossfadeMs = crossfadeMsParameter != nullptr
+        ? (double) crossfadeMsParameter->load()
+        : (double) gf::parameters::crossfadeMsDefault;
     crossfadeSamples = static_cast<int> (std::max (1.0, std::round (crossfadeMs * 0.001 * currentSampleRate)));
     crossfadePos = 0;
     crossfadeDir = None;
@@ -135,12 +130,11 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
     const int numChannels = juce::jmin (circularBuffer.getNumChannels(), buffer.getNumChannels());
 
     // Read parameter values from APVTS
-    auto* freezeVal = apvts.getRawParameterValue ("freeze");
-    auto* pitchVal = apvts.getRawParameterValue ("pitch");
-    auto* crossfadeMsVal = apvts.getRawParameterValue ("crossfadeMs");
-    const bool frozen = freezeVal ? (*freezeVal > 0.5f) : false;
-    const float pitch = pitchVal ? pitchVal->load() : 1.0f;
-    const float crossfadeMs = crossfadeMsVal ? crossfadeMsVal->load() : 30.0f;
+    const bool frozen = freezeParameter != nullptr ? (freezeParameter->load() > 0.5f) : false;
+    const float pitch = pitchParameter != nullptr ? pitchParameter->load() : gf::parameters::pitchDefault;
+    const float crossfadeMs = crossfadeMsParameter != nullptr
+        ? crossfadeMsParameter->load()
+        : gf::parameters::crossfadeMsDefault;
 
     // Compute crossfade length in samples based on parameter and sample rate
     const int requestedCrossfadeSamples = static_cast<int> (std::max (1.0, std::round (crossfadeMs * 0.001 * currentSampleRate)));
@@ -329,9 +323,16 @@ void GranularFreezeAudioProcessor::getStateInformation (juce::MemoryBlock& destD
 
 void GranularFreezeAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
-    if (xmlState != nullptr)
-        apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
+    if (auto xmlState = std::unique_ptr<juce::XmlElement> (getXmlFromBinary (data, sizeInBytes)))
+    {
+        auto restored = juce::ValueTree::fromXml (*xmlState);
+        if (restored.isValid()
+            && restored.getType().toString() == gf::parameters::rootId)
+        {
+            gf::parameters::addMissingV02Defaults (restored);
+            apvts.replaceState (restored);
+        }
+    }
 }
 
 // This creates new instances of the plugin
