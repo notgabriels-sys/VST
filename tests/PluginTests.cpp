@@ -90,6 +90,62 @@ bool sameTree (const juce::ValueTree& left, const juce::ValueTree& right)
     return left.isEquivalentTo (right);
 }
 
+void configureAndPrepare (GranularFreezeAudioProcessor& processor)
+{
+    processor.setPlayConfigDetails (2, 2, kSampleRate, kBlockSize);
+    processor.prepareToPlay (kSampleRate, kBlockSize);
+}
+
+std::vector<float> renderPrototypeFreezeTail (GranularFreezeAudioProcessor& processor)
+{
+    juce::AudioBuffer<float> block (2, kBlockSize);
+    juce::MidiBuffer midi;
+    std::vector<float> tail;
+    double phase = 0.0;
+    const auto phaseIncrement = juce::MathConstants<double>::twoPi * 220.0 / kSampleRate;
+
+    setParam (processor, "freeze", 0.0f);
+    for (int blockIndex = 0; blockIndex < 8; ++blockIndex)
+    {
+        for (int sample = 0; sample < kBlockSize; ++sample)
+        {
+            const auto value = (float) std::sin (phase);
+            block.setSample (0, sample, value);
+            block.setSample (1, sample, value);
+            phase += phaseIncrement;
+        }
+
+        midi.clear();
+        processor.processBlock (block, midi);
+    }
+
+    setParam (processor, "freeze", 1.0f);
+    for (int blockIndex = 0; blockIndex < 36; ++blockIndex)
+    {
+        block.clear();
+        midi.clear();
+        processor.processBlock (block, midi);
+
+        if (blockIndex >= 20)
+            for (int sample = 0; sample < kBlockSize; ++sample)
+                tail.push_back (block.getSample (0, sample));
+    }
+
+    return tail;
+}
+
+float maxDifference (const std::vector<float>& left, const std::vector<float>& right)
+{
+    if (left.size() != right.size())
+        return std::numeric_limits<float>::infinity();
+
+    float difference = 0.0f;
+    for (size_t index = 0; index < left.size(); ++index)
+        difference = std::max (difference, std::abs (left[index] - right[index]));
+
+    return difference;
+}
+
 struct Rig
 {
     GranularFreezeAudioProcessor proc;
@@ -203,6 +259,16 @@ int main()
         check (freeze != nullptr, "parameters: freeze ID remains available");
         check (freeze != nullptr && near (freeze->getDefaultValue(), 0.0f),
                "parameters: freeze default remains off");
+        const auto* freezeBool = dynamic_cast<const juce::AudioParameterBool*> (freeze);
+        check (freezeBool != nullptr, "parameters: freeze remains AudioParameterBool");
+        check (freeze != nullptr && freeze->getNumSteps() == 2,
+               "parameters: freeze has exactly two host steps");
+        check (freeze != nullptr && near (freeze->convertFrom0to1 (0.0f), 0.0f)
+               && near (freeze->convertFrom0to1 (1.0f), 1.0f),
+               "parameters: freeze normalised endpoints convert exactly to 0 and 1");
+        check (freeze != nullptr && near (freeze->convertTo0to1 (0.0f), 0.0f)
+               && near (freeze->convertTo0to1 (1.0f), 1.0f),
+               "parameters: freeze raw endpoints convert exactly to 0 and 1");
 
         for (const auto& item : expected)
         {
@@ -292,19 +358,97 @@ int main()
         GranularFreezeAudioProcessor restoredBeforePrepare;
         restoredBeforePrepare.setStateInformation (v01Binary.getData(), (int) v01Binary.getSize());
         verifyMigratedState (restoredBeforePrepare, "state before prepareToPlay");
-        restoredBeforePrepare.setPlayConfigDetails (2, 2, kSampleRate, kBlockSize);
-        restoredBeforePrepare.prepareToPlay (kSampleRate, kBlockSize);
+        configureAndPrepare (restoredBeforePrepare);
+        verifyMigratedState (restoredBeforePrepare, "state before prepareToPlay after prepareToPlay");
+        const auto beforePrepareMigratedState = restoredBeforePrepare.apvts.copyState();
         processFiniteAudio (restoredBeforePrepare);
 
         GranularFreezeAudioProcessor restoredAfterPrepare;
-        restoredAfterPrepare.setPlayConfigDetails (2, 2, kSampleRate, kBlockSize);
-        restoredAfterPrepare.prepareToPlay (kSampleRate, kBlockSize);
+        configureAndPrepare (restoredAfterPrepare);
         restoredAfterPrepare.setStateInformation (v01Binary.getData(), (int) v01Binary.getSize());
         verifyMigratedState (restoredAfterPrepare, "state after prepareToPlay");
+        const auto afterPrepareMigratedState = restoredAfterPrepare.apvts.copyState();
+        check (sameTree (beforePrepareMigratedState, afterPrepareMigratedState),
+               "state timing: complete migrated state matches before and after prepareToPlay");
         processFiniteAudio (restoredAfterPrepare);
+
+        configureAndPrepare (restoredBeforePrepare);
+        configureAndPrepare (restoredAfterPrepare);
+        const auto beforePrepareFreezeTail = renderPrototypeFreezeTail (restoredBeforePrepare);
+        const auto afterPrepareFreezeTail = renderPrototypeFreezeTail (restoredAfterPrepare);
+        check (maxAbs (beforePrepareFreezeTail) > 0.3f,
+               "state timing: restored legacy freeze playback is meaningfully non-silent");
+        check (beforePrepareFreezeTail == afterPrepareFreezeTail,
+               "state timing: restored legacy freeze playback is sample-identical across restore timing");
+
+        GranularFreezeAudioProcessor defaultControl;
+        configureAndPrepare (defaultControl);
+        const auto defaultFreezeTail = renderPrototypeFreezeTail (defaultControl);
+        check (maxDifference (beforePrepareFreezeTail, defaultFreezeTail) > 0.1f,
+               "state timing: restored legacy pitch and crossfade differ from default control");
     }
 
     // ---------------------------------------------------------------- 3
+    // Non-PARAM future subtrees can use current parameter IDs. They must never
+    // become APVTS adapters or gain a value property during restoration.
+    {
+        GranularFreezeAudioProcessor legacySource;
+        auto noSizeParameterState = legacySource.apvts.copyState();
+        for (int index = noSizeParameterState.getNumChildren(); --index >= 0;)
+        {
+            const auto id = noSizeParameterState.getChild (index).getProperty ("id").toString();
+            if (id == "grainSizeMs" || id == "densityHz" || id == "position")
+                noSizeParameterState.removeChild (index, nullptr);
+        }
+
+        juce::ValueTree noSizeCollision ("FUTURE_SIZE");
+        noSizeCollision.setProperty ("id", "grainSizeMs", nullptr);
+        noSizeCollision.setProperty ("value", "13", nullptr);
+        noSizeCollision.setProperty ("futureMetadata", "keep-me", nullptr);
+        noSizeCollision.addChild (juce::ValueTree ("FUTURE_LEAF"), -1, nullptr);
+        const auto noSizeCollisionExpected = noSizeCollision.createCopy();
+        noSizeParameterState.addChild (noSizeCollision, -1, nullptr);
+        const auto noSizeCollisionIndex = noSizeParameterState.getNumChildren() - 1;
+
+        juce::MemoryBlock noSizeCollisionBinary;
+        copyStateToBinary (noSizeParameterState, noSizeCollisionBinary);
+        GranularFreezeAudioProcessor restoredMissingSize;
+        restoredMissingSize.setStateInformation (noSizeCollisionBinary.getData(), (int) noSizeCollisionBinary.getSize());
+        const auto afterMissingSizeCopy = restoredMissingSize.apvts.copyState();
+        check (near (rawParam (restoredMissingSize, "grainSizeMs"), 80.0f),
+               "state collision: absent PARAM size appends and restores the real default");
+        check (afterMissingSizeCopy.getChild (noSizeCollisionIndex).hasType ("FUTURE_SIZE")
+               && sameTree (afterMissingSizeCopy.getChild (noSizeCollisionIndex), noSizeCollisionExpected),
+               "state collision: non-PARAM size collision stays semantically identical after copyState");
+
+        GranularFreezeAudioProcessor currentSource;
+        setParam (currentSource, "grainSizeMs", 123.0f);
+        auto realSizeState = currentSource.apvts.copyState();
+        juce::ValueTree realSizeCollision ("FUTURE_SIZE");
+        realSizeCollision.setProperty ("id", "grainSizeMs", nullptr);
+        realSizeCollision.setProperty ("value", "13", nullptr);
+        realSizeCollision.setProperty ("futureMetadata", "do-not-bind", nullptr);
+        realSizeCollision.addChild (juce::ValueTree ("FUTURE_LEAF"), -1, nullptr);
+        const auto realSizeCollisionExpected = realSizeCollision.createCopy();
+        realSizeState.addChild (realSizeCollision, -1, nullptr);
+        const auto realSizeCollisionIndex = realSizeState.getNumChildren() - 1;
+
+        juce::MemoryBlock realSizeCollisionBinary;
+        copyStateToBinary (realSizeState, realSizeCollisionBinary);
+        GranularFreezeAudioProcessor restoredRealSize;
+        restoredRealSize.setStateInformation (realSizeCollisionBinary.getData(), (int) realSizeCollisionBinary.getSize());
+        const auto afterRealSizeCopy = restoredRealSize.apvts.copyState();
+        const auto afterSecondRealSizeCopy = restoredRealSize.apvts.copyState();
+        check (near (rawParam (restoredRealSize, "grainSizeMs"), 123.0f),
+               "state collision: last real PARAM size remains active after later non-PARAM collision");
+        check (afterRealSizeCopy.getChild (realSizeCollisionIndex).hasType ("FUTURE_SIZE")
+               && sameTree (afterRealSizeCopy.getChild (realSizeCollisionIndex), realSizeCollisionExpected),
+               "state collision: later non-PARAM child retains exact type and properties");
+        check (sameTree (afterSecondRealSizeCopy.getChild (realSizeCollisionIndex), realSizeCollisionExpected),
+               "state collision: repeated copyState does not mutate later non-PARAM child");
+    }
+
+    // ---------------------------------------------------------------- 4
     // A current project must restore every parameter value, while malformed or
     // foreign state must leave the current project exactly untouched.
     {

@@ -2,6 +2,48 @@
 #include "PluginEditor.h"
 #include "PluginParameters.h"
 
+namespace
+{
+bool isStableParameterId (const juce::String& id)
+{
+    return id == gf::parameters::freezeId
+        || id == gf::parameters::pitchId
+        || id == gf::parameters::crossfadeMsId
+        || id == gf::parameters::grainSizeMsId
+        || id == gf::parameters::densityHzId
+        || id == gf::parameters::positionId;
+}
+
+struct MaskedNonParameterId
+{
+    juce::ValueTree child;
+    juce::var originalId;
+};
+
+std::vector<MaskedNonParameterId> maskStableIdCollisions (juce::ValueTree& state)
+{
+    std::vector<MaskedNonParameterId> masked;
+
+    for (auto child : state)
+    {
+        const auto id = child.getProperty ("id").toString();
+        if (! child.hasType ("PARAM") && isStableParameterId (id))
+        {
+            masked.push_back ({ child, child.getProperty ("id") });
+            child.setProperty ("id", "__gf_non_parameter_" + juce::String (masked.size()), nullptr);
+        }
+    }
+
+    return masked;
+}
+
+void restoreMaskedIds (std::vector<MaskedNonParameterId>& masked)
+{
+    for (auto& entry : masked)
+        entry.child.setProperty ("id", entry.originalId, nullptr);
+}
+} // namespace
+
 GranularFreezeAudioProcessor::GranularFreezeAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
      : AudioProcessor (BusesProperties()
@@ -330,7 +372,9 @@ void GranularFreezeAudioProcessor::setStateInformation (const void* data, int si
             && restored.getType().toString() == gf::parameters::rootId)
         {
             gf::parameters::addMissingV02Defaults (restored);
+            auto masked = maskStableIdCollisions (restored);
             apvts.replaceState (restored);
+            restoreMaskedIds (masked);
         }
     }
 }
