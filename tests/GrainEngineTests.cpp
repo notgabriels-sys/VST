@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <limits>
+#include <utility>
 #include <vector>
 
 namespace gf
@@ -23,7 +24,9 @@ struct GrainEngineTestAccess
         std::uint64_t totalLaunchCount = 0;
         std::array<bool, GrainEngine::maxVoices> active {};
         std::array<double, GrainEngine::maxVoices> readPositions {};
+        std::array<double, GrainEngine::maxVoices> sourceIncrements {};
         std::array<int, GrainEngine::maxVoices> envelopeIndices {};
+        std::array<int, GrainEngine::maxVoices> envelopeLengths {};
         std::array<std::uint64_t, GrainEngine::maxVoices> launchOrders {};
     };
 
@@ -46,7 +49,9 @@ struct GrainEngineTestAccess
         {
             result.active[index] = engine.voices[index].active;
             result.readPositions[index] = engine.voices[index].logicalReadPosition;
+            result.sourceIncrements[index] = engine.voices[index].sourceIncrement;
             result.envelopeIndices[index] = engine.voices[index].envelopeIndex;
+            result.envelopeLengths[index] = engine.voices[index].envelopeLength;
             result.launchOrders[index] = engine.voices[index].launchOrder;
         }
 
@@ -70,6 +75,23 @@ struct GrainEngineTestAccess
         engine.voices[index].launchOrder = launchOrder;
     }
 
+    static void seedVoice (GrainEngine& engine, std::size_t index,
+                           double readPosition, double sourceIncrement,
+                           int envelopeIndex, int envelopeLength) noexcept
+    {
+        engine.voices[index].logicalReadPosition = readPosition;
+        engine.voices[index].sourceIncrement = sourceIncrement;
+        engine.voices[index].envelopeIndex = envelopeIndex;
+        engine.voices[index].envelopeLength = envelopeLength;
+    }
+
+    static void deactivateAllExcept (GrainEngine& engine,
+                                     std::size_t activeIndex) noexcept
+    {
+        for (std::size_t index = 0; index < GrainEngine::maxVoices; ++index)
+            engine.voices[index].active = index == activeIndex;
+    }
+
     static bool isActive (const GrainEngine& engine, std::size_t index) noexcept
     {
         return engine.voices[index].active;
@@ -88,6 +110,11 @@ struct GrainEngineTestAccess
     static int envelopeLength (const GrainEngine& engine, std::size_t index) noexcept
     {
         return engine.voices[index].envelopeLength;
+    }
+
+    static int envelopeIndex (const GrainEngine& engine, std::size_t index) noexcept
+    {
+        return engine.voices[index].envelopeIndex;
     }
 
     static std::uint64_t launchOrder (const GrainEngine& engine, std::size_t index) noexcept
@@ -277,7 +304,9 @@ bool sameState (const gf::GrainEngineTestAccess::State& left,
         && left.totalLaunchCount == right.totalLaunchCount
         && left.active == right.active
         && left.readPositions == right.readPositions
+        && left.sourceIncrements == right.sourceIncrements
         && left.envelopeIndices == right.envelopeIndices
+        && left.envelopeLengths == right.envelopeLengths
         && left.launchOrders == right.launchOrders;
 }
 
@@ -302,14 +331,20 @@ juce::AudioBuffer<float> renderPitch (const gf::FrozenBufferView& source, float 
     return output;
 }
 
-juce::AudioBuffer<float> renderDeterministic (const gf::FrozenBufferView& source)
+struct DeterministicRender
+{
+    juce::AudioBuffer<float> output;
+    std::uint64_t launchCount = 0;
+};
+
+DeterministicRender renderDeterministic (const gf::FrozenBufferView& source)
 {
     gf::GrainEngine engine;
     engine.prepare (48000.0);
     juce::AudioBuffer<float> output (2, 12000);
     gf::GrainParameters parameters { 80.0f, 37.0f, 0.37f, 1.23f };
     engine.render (source, output, 0, output.getNumSamples(), parameters);
-    return output;
+    return { std::move (output), engine.getTotalLaunchCount() };
 }
 
 void renderCountedSamples (gf::GrainEngine& engine, const gf::FrozenBufferView& source,
@@ -525,6 +560,66 @@ int main()
                && lifecycleEngine.getActiveVoiceCount() == 0,
                invalidSampleRateChecks[index]);
     }
+
+    juce::AudioBuffer<float> largeRateSource (1, 16);
+    fillConstant (largeRateSource, 1.0f, 0.0f);
+    const gf::FrozenBufferView largeRateView { &largeRateSource, 16, 16, 0 };
+    const double maximumEnvelopeRate = (double) std::numeric_limits<int>::max() / 0.2;
+    const std::array<double, 4> checkedLargeSampleRates {
+        ((double) std::numeric_limits<int>::max() - 1.0) / 0.2,
+        maximumEnvelopeRate,
+        ((double) std::numeric_limits<int>::max() + 1.0) / 0.2,
+        std::numeric_limits<double>::max()
+    };
+    const std::array<int, 4> checkedEnvelopeLengths {
+        std::numeric_limits<int>::max() - 1,
+        std::numeric_limits<int>::max(),
+        std::numeric_limits<int>::max(),
+        std::numeric_limits<int>::max()
+    };
+    const std::array<const char*, 4> checkedLargeRateNames {
+        "engine: rate immediately below envelope limit converts exactly",
+        "engine: rate at envelope limit converts exactly",
+        "engine: rate immediately above envelope limit saturates safely",
+        "engine: maximum finite rate saturates without corrupting launch state"
+    };
+    for (std::size_t index = 0; index < checkedLargeSampleRates.size(); ++index)
+    {
+        gf::GrainEngine largeRateEngine;
+        largeRateEngine.prepare (checkedLargeSampleRates[index]);
+        gf::GrainEngineTestAccess::launch (
+            largeRateEngine, largeRateView, { 200.0f, 1.0f, 1.0f, 2.0f });
+        const auto checkedState = gf::GrainEngineTestAccess::state (largeRateEngine);
+        check (checkedState.sampleRate == checkedLargeSampleRates[index]
+               && gf::GrainEngineTestAccess::envelopeLength (largeRateEngine, 0)
+                    == checkedEnvelopeLengths[index]
+               && gf::GrainEngineTestAccess::envelopeIndex (largeRateEngine, 0) == 0
+               && nearDouble (gf::GrainEngineTestAccess::readPosition (
+                                  largeRateEngine, 0), 15.0)
+               && nearDouble (gf::GrainEngineTestAccess::sourceIncrement (
+                                  largeRateEngine, 0), 2.0)
+               && largeRateEngine.getTotalLaunchCount() == 1,
+               checkedLargeRateNames[index]);
+    }
+
+    gf::GrainEngine maximumRateRenderEngine;
+    maximumRateRenderEngine.prepare (std::numeric_limits<double>::max());
+    juce::AudioBuffer<float> maximumRateRender (2, 1);
+    fillConstant (maximumRateRender, 0.33f, 0.33f);
+    maximumRateRenderEngine.render (
+        largeRateView, maximumRateRender, 0, 1,
+        { 200.0f, 1.0f, 1.0f, 2.0f });
+    check (maximumRateRenderEngine.getTotalLaunchCount() == 1
+           && maximumRateRenderEngine.getActiveVoiceCount() == 1
+           && gf::GrainEngineTestAccess::envelopeLength (
+                  maximumRateRenderEngine, 0) == std::numeric_limits<int>::max()
+           && gf::GrainEngineTestAccess::envelopeIndex (
+                  maximumRateRenderEngine, 0) == 1
+           && nearDouble (gf::GrainEngineTestAccess::readPosition (
+                              maximumRateRenderEngine, 0), 17.0)
+           && allFinite (maximumRateRender)
+           && allEqual (maximumRateRender, 0.0f),
+           "engine: maximum finite prepared rate renders one safe launch sample");
 
     lifecycleEngine.prepare (1000.0);
     renderCountedSamples (lifecycleEngine, constantView, 1,
@@ -796,25 +891,79 @@ int main()
     gf::GrainEngine nonFiniteEngine;
     nonFiniteEngine.prepare (1000.0);
     juce::AudioBuffer<float> nonFiniteRender (2, 5);
+    fillConstant (nonFiniteRender, 0.33f, -0.33f);
     nonFiniteEngine.render (nonFiniteView, nonFiniteRender, 0, 5,
                             { 5.0f, 1.0f, 0.0f, 1.0f });
     check (allFinite (nonFiniteRender) && allEqual (nonFiniteRender, 0.0f),
            "engine: non-finite source results are replaced with exact zero");
+    const auto nonFiniteState = gf::GrainEngineTestAccess::state (nonFiniteEngine);
+    check (nonFiniteEngine.getTotalLaunchCount() == 1
+           && nonFiniteState.nextLaunchOrder == 1
+           && ! nonFiniteState.active[0]
+           && nearDouble (nonFiniteState.readPositions[0], 5.0)
+           && nearDouble (nonFiniteState.sourceIncrements[0], 1.0)
+           && nonFiniteState.envelopeIndices[0] == 5
+           && nonFiniteState.envelopeLengths[0] == 5,
+           "engine: non-finite source still launches and advances its voice");
 
     gf::GrainEngine invalidInputEngine;
     invalidInputEngine.prepare (1000.0);
     const gf::GrainParameters tenSampleInterval { 200.0f, 100.0f, 0.0f, 1.0f };
     renderCountedSamples (invalidInputEngine, constantView, 1, tenSampleInterval);
     const auto validStateBeforeInvalid = gf::GrainEngineTestAccess::state (invalidInputEngine);
-    juce::AudioBuffer<float> invalidSourceDestination (2, 8);
-    fillConstant (invalidSourceDestination, 0.33f, 0.33f);
-    invalidInputEngine.render (nullBuffer, invalidSourceDestination, 0, 8,
-                               tenSampleInterval);
-    check (allEqual (invalidSourceDestination, 0.33f),
-           "engine: unreadable source leaves destination untouched");
-    check (sameState (validStateBeforeInvalid,
-                      gf::GrainEngineTestAccess::state (invalidInputEngine)),
-           "engine: unreadable source leaves scheduler and voices untouched");
+    const std::array<gf::FrozenBufferView, 10> unreadableEngineViews {
+        nullBuffer,
+        empty,
+        noChannelStorage,
+        negativeCapacity,
+        zeroCapacity,
+        negativeSpan,
+        spanBeyondCapacity,
+        capacityBeyondStorage,
+        negativeOldest,
+        oldestAtCapacity
+    };
+    const std::array<const char*, 10> unreadableEngineViewNames {
+        "null buffer",
+        "zero span",
+        "zero-channel storage",
+        "negative capacity",
+        "zero capacity",
+        "negative span",
+        "span beyond capacity",
+        "capacity beyond storage",
+        "negative oldest index",
+        "oldest index at capacity"
+    };
+    for (std::size_t index = 0; index < unreadableEngineViews.size(); ++index)
+    {
+        juce::AudioBuffer<float> invalidSourceDestination (2, 8);
+        fillConstant (invalidSourceDestination, 0.33f, 0.33f);
+        const auto launchCountBeforeInvalid = invalidInputEngine.getTotalLaunchCount();
+        invalidInputEngine.render (unreadableEngineViews[index],
+                                   invalidSourceDestination, 0, 8,
+                                   tenSampleInterval);
+
+        char outputCheck[128] {};
+        char stateCheck[128] {};
+        char countCheck[128] {};
+        std::snprintf (outputCheck, sizeof (outputCheck),
+                       "engine: %s source leaves destination untouched",
+                       unreadableEngineViewNames[index]);
+        std::snprintf (stateCheck, sizeof (stateCheck),
+                       "engine: %s source leaves complete state untouched",
+                       unreadableEngineViewNames[index]);
+        std::snprintf (countCheck, sizeof (countCheck),
+                       "engine: %s source leaves launch count unchanged",
+                       unreadableEngineViewNames[index]);
+
+        check (allEqual (invalidSourceDestination, 0.33f), outputCheck);
+        check (sameState (validStateBeforeInvalid,
+                          gf::GrainEngineTestAccess::state (invalidInputEngine)),
+               stateCheck);
+        check (invalidInputEngine.getTotalLaunchCount() == launchCountBeforeInvalid,
+               countCheck);
+    }
 
     auto checkInvalidDestination = [&] (int startSample, int numSamples,
                                         const char* outputCheck,
@@ -840,8 +989,11 @@ int main()
                              "engine: destination start past end leaves output untouched",
                              "engine: destination start past end leaves scheduler untouched");
     checkInvalidDestination (6, 3,
-                             "engine: overflowing destination range leaves output untouched",
-                             "engine: overflowing destination range leaves scheduler untouched");
+                             "engine: one-sample destination overrun leaves output untouched",
+                             "engine: one-sample destination overrun leaves scheduler untouched");
+    checkInvalidDestination (1, std::numeric_limits<int>::max(),
+                             "engine: INT_MAX destination length leaves output untouched",
+                             "engine: INT_MAX destination length leaves scheduler untouched");
 
     juce::AudioBuffer<float> noChannelDestination (0, 8);
     invalidInputEngine.render (constantView, noChannelDestination, 0, 8,
@@ -886,10 +1038,32 @@ int main()
     check (voicePoolEngine.getActiveVoiceCount() == 64
            && voicePoolEngine.getTotalLaunchCount() == 64,
            "engine: all 64 fixed voices can be active without allocation");
-    gf::GrainEngineTestAccess::launch (voicePoolEngine, constantView, defaults);
-    check (gf::GrainEngineTestAccess::launchOrder (voicePoolEngine, 0) == 64
+    gf::GrainEngineTestAccess::seedVoice (
+        voicePoolEngine, 0, 987.25, 0.5, 77, 99);
+    gf::GrainEngineTestAccess::launch (
+        voicePoolEngine, rampView, { 5.0f, 1.0f, 0.5f, 2.0f });
+    check (gf::GrainEngineTestAccess::isActive (voicePoolEngine, 0)
+           && nearDouble (gf::GrainEngineTestAccess::readPosition (
+                              voicePoolEngine, 0), 2.0)
+           && nearDouble (gf::GrainEngineTestAccess::sourceIncrement (
+                              voicePoolEngine, 0), 2.0)
+           && gf::GrainEngineTestAccess::envelopeIndex (voicePoolEngine, 0) == 0
+           && gf::GrainEngineTestAccess::envelopeLength (voicePoolEngine, 0) == 5
+           && gf::GrainEngineTestAccess::launchOrder (voicePoolEngine, 0) == 64
            && gf::GrainEngineTestAccess::launchOrder (voicePoolEngine, 1) == 1,
-           "engine: full pool deterministically replaces oldest launch");
+           "engine: oldest replacement reinitialises every launch-time field");
+
+    auto replacementRenderEngine = voicePoolEngine;
+    gf::GrainEngineTestAccess::deactivateAllExcept (replacementRenderEngine, 0);
+    juce::AudioBuffer<float> replacementRender (1, 5);
+    replacementRenderEngine.render (
+        rampView, replacementRender, 0, replacementRender.getNumSamples(),
+        { 200.0f, 0.0f, 1.0f, 0.5f });
+    check (near (replacementRender.getSample (0, 1), 2.0f)
+           && near (replacementRender.getSample (0, 2), 6.0f)
+           && near (replacementRender.getSample (0, 3), 4.0f)
+           && replacementRenderEngine.getActiveVoiceCount() == 0,
+           "engine: reinitialised replacement renders its new start pitch and envelope");
 
     for (std::size_t index = 0; index < gf::GrainEngine::maxVoices; ++index)
         gf::GrainEngineTestAccess::setLaunchOrder (voicePoolEngine, index,
@@ -901,8 +1075,76 @@ int main()
            && gf::GrainEngineTestAccess::launchOrder (voicePoolEngine, 7) == 1,
            "engine: oldest-order tie deterministically replaces lowest index");
 
-    const auto renderA = flatten (renderDeterministic (sineView));
-    const auto renderB = flatten (renderDeterministic (sineView));
+    juce::AudioBuffer<float> launchCaptureSource (1, 100);
+    for (int sample = 0; sample < launchCaptureSource.getNumSamples(); ++sample)
+        launchCaptureSource.setSample (0, sample, (float) sample);
+    const gf::FrozenBufferView launchCaptureView {
+        &launchCaptureSource, 100, 100, 0
+    };
+    gf::GrainEngine launchCaptureEngine;
+    launchCaptureEngine.prepare (1000.0);
+    juce::AudioBuffer<float> originalLaunchSample (1, 1);
+    launchCaptureEngine.render (
+        launchCaptureView, originalLaunchSample, 0, 1,
+        { 20.0f, 1.0f, 0.0f, 1.0f });
+    check (gf::GrainEngineTestAccess::envelopeLength (
+               launchCaptureEngine, 0) == 20
+           && gf::GrainEngineTestAccess::envelopeIndex (
+                  launchCaptureEngine, 0) == 1
+           && nearDouble (gf::GrainEngineTestAccess::readPosition (
+                              launchCaptureEngine, 0), 1.0)
+           && nearDouble (gf::GrainEngineTestAccess::sourceIncrement (
+                              launchCaptureEngine, 0), 1.0),
+           "engine: initial long voice captures original size position and pitch");
+
+    juce::AudioBuffer<float> changedWithoutLaunch (1, 1);
+    launchCaptureEngine.render (
+        launchCaptureView, changedWithoutLaunch, 0, 1,
+        { 5.0f, 0.0f, 1.0f, 2.0f });
+    check (gf::GrainEngineTestAccess::envelopeLength (
+               launchCaptureEngine, 0) == 20
+           && gf::GrainEngineTestAccess::envelopeIndex (
+                  launchCaptureEngine, 0) == 2
+           && nearDouble (gf::GrainEngineTestAccess::readPosition (
+                              launchCaptureEngine, 0), 2.0)
+           && nearDouble (gf::GrainEngineTestAccess::sourceIncrement (
+                              launchCaptureEngine, 0), 1.0)
+           && changedWithoutLaunch.getSample (0, 0) > 0.0f,
+           "engine: parameter change cannot retarget an active voice");
+
+    juce::AudioBuffer<float> changedWithLaunch (1, 1);
+    launchCaptureEngine.render (
+        launchCaptureView, changedWithLaunch, 0, 1,
+        { 5.0f, 1.0f, 1.0f, 2.0f });
+    check (launchCaptureEngine.getTotalLaunchCount() == 2
+           && gf::GrainEngineTestAccess::envelopeLength (
+                  launchCaptureEngine, 0) == 20
+           && gf::GrainEngineTestAccess::envelopeIndex (
+                  launchCaptureEngine, 0) == 3
+           && nearDouble (gf::GrainEngineTestAccess::readPosition (
+                              launchCaptureEngine, 0), 3.0)
+           && nearDouble (gf::GrainEngineTestAccess::sourceIncrement (
+                              launchCaptureEngine, 0), 1.0)
+           && gf::GrainEngineTestAccess::envelopeLength (
+                  launchCaptureEngine, 1) == 5
+           && gf::GrainEngineTestAccess::envelopeIndex (
+                  launchCaptureEngine, 1) == 1
+           && nearDouble (gf::GrainEngineTestAccess::readPosition (
+                              launchCaptureEngine, 1), 93.0)
+           && nearDouble (gf::GrainEngineTestAccess::sourceIncrement (
+                              launchCaptureEngine, 1), 2.0)
+           && changedWithLaunch.getSample (0, 0) > 0.1f,
+           "engine: only a subsequent launch captures changed size position and pitch");
+
+    const auto deterministicA = renderDeterministic (sineView);
+    const auto deterministicB = renderDeterministic (sineView);
+    const auto renderA = flatten (deterministicA.output);
+    const auto renderB = flatten (deterministicB.output);
+    check (deterministicA.launchCount == 10
+           && deterministicB.launchCount == 10
+           && peakMagnitude (deterministicA.output) > 0.1f
+           && peakMagnitude (deterministicB.output) > 0.1f,
+           "engine: determinism fixture launches expected non-silent grains");
     check (renderA == renderB,
            "engine: identical state and input are sample-identical");
 

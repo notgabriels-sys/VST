@@ -1,6 +1,8 @@
 #include "GrainEngine.h"
 
 #include <cmath>
+#include <cstdint>
+#include <limits>
 
 namespace
 {
@@ -121,11 +123,38 @@ void GrainEngine::launchVoice (const FrozenBufferView& source,
     if (! source.isReadable())
         return;
 
-    const int grainSamples = juce::jmax (2, juce::roundToInt (
-        parameters.grainSizeMs * 0.001f * (float) sampleRate));
-    const int sourceSpan = 1 + (int) std::ceil (
-        (double) (grainSamples - 1) * (double) parameters.pitch);
-    const int maxCompleteStart = source.span - sourceSpan;
+    const double durationSamples = (double) parameters.grainSizeMs
+                                 * 0.001 * sampleRate;
+    const double maximumEnvelopeLength =
+        (double) std::numeric_limits<int>::max();
+
+    int grainSamples = 2;
+    if (! std::isfinite (durationSamples)
+        || durationSamples >= maximumEnvelopeLength)
+    {
+        grainSamples = std::numeric_limits<int>::max();
+    }
+    else if (durationSamples > 2.0)
+    {
+        const double roundedDuration = std::round (durationSamples);
+        grainSamples = roundedDuration >= maximumEnvelopeLength
+            ? std::numeric_limits<int>::max()
+            : (int) roundedDuration;
+    }
+
+    const double sourceDistance = (double) (grainSamples - 1)
+                                * (double) parameters.pitch;
+    const double maximumSourceDistance =
+        (double) (std::numeric_limits<std::int64_t>::max() - 1);
+
+    std::int64_t sourceSpan = std::numeric_limits<std::int64_t>::max();
+    if (std::isfinite (sourceDistance)
+        && sourceDistance < maximumSourceDistance)
+    {
+        sourceSpan = 1 + (std::int64_t) std::ceil (sourceDistance);
+    }
+
+    const std::int64_t maxCompleteStart = (std::int64_t) source.span - sourceSpan;
     const double logicalStart = maxCompleteStart >= 0
         ? std::round ((double) parameters.position * (double) maxCompleteStart)
         : std::round ((double) parameters.position * (double) (source.span - 1));
