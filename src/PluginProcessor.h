@@ -1,8 +1,9 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "GrainEngine.h"
+#include "PluginParameters.h"
 
-// A compact prototype: circular buffer with a freeze toggle and coarse pitch control.
 class GranularFreezeAudioProcessor  : public juce::AudioProcessor
 {
 public:
@@ -49,25 +50,30 @@ private:
     std::atomic<float>* densityHzParameter = nullptr;
     std::atomic<float>* positionParameter = nullptr;
 
-    // Circular buffer for live capture and freeze playback
+    // Circular buffer for chronological live capture.
     juce::AudioBuffer<float> circularBuffer;
-    int writePosition = 0;    // where incoming audio is written
-    double readPosition = 0.0; // fractional read head for playback when frozen
-    double currentSampleRate = 44100.0;
-    int maxBufferSize = 0; // samples (depends on configured seconds)
-    // How much of circularBuffer actually holds captured audio. Until the
-    // buffer has filled once this is less than maxBufferSize, and frozen
-    // playback must wrap within it -- otherwise the read head runs through the
-    // still-zeroed remainder and freeze outputs silence.
-    int validSamples = 0;
+    juce::AudioBuffer<float> wetScratch;
+    gf::GrainEngine grainEngine;
+    gf::FrozenBufferView frozenView;
 
-    // Crossfade smoothing when toggling freeze (in samples)
-    int crossfadeSamples = 0;
-    int crossfadePos = 0; // counts down
-    enum CrossfadeDir { None = 0, ToFrozen = 1, ToLive = 2 };
-    CrossfadeDir crossfadeDir = None;
-    bool freezeWriting = true; // when false, incoming audio is not written to circular buffer
-    bool prevFreezeState = false;
+    int writePosition = 0;
+    double currentSampleRate = 44100.0;
+    int maxBufferSize = 1;
+    int validSamples = 0;
+    int preparedBlockSize = 1;
+
+    bool freezeTarget = false;
+    float wetMix = 0.0f;
+    float transitionStartMix = 0.0f;
+    float transitionTargetMix = 0.0f;
+    int transitionLength = 0;
+    int transitionPosition = 0;
+    bool transitionActive = false;
+
+    void snapshotFrozenView() noexcept;
+    void beginTransition (float targetMix, float crossfadeMs) noexcept;
+    bool advanceTransition() noexcept;
+    bool isFullyLive() const noexcept;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GranularFreezeAudioProcessor)
 };
