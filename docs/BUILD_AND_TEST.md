@@ -1,61 +1,95 @@
-# Build & Test — Granular Freeze
+# Build & Test - Granular Freeze
 
 ## Prerequisites
 
-- **macOS**: Xcode + command line tools, CMake >= 3.22
+- **macOS**: Xcode and command line tools, CMake >= 3.22
 - **Windows**: Visual Studio 2022 with the C++ workload, CMake >= 3.22
-- **JUCE**: fetched automatically, see below
+- **JUCE**: fetched automatically as described below
 
 CMake 3.22 is a hard floor because JUCE 8 requires it.
 
 ## JUCE
 
-You do not need to install JUCE. `CMakeLists.txt` fetches JUCE 8.0.15 via
-`FetchContent` on first configure, which adds a few minutes to a cold build.
+You do not need to install JUCE. `CMakeLists.txt` fetches the pinned JUCE
+8.0.15 release on first configure, which can add a few minutes to a cold build.
 
-To build against a local JUCE checkout instead, set `JUCE_SOURCE_DIR`:
+To use a local JUCE checkout, set the project-specific override:
 
-    cmake -S . -B build -DJUCE_SOURCE_DIR=/path/to/JUCE
+    cmake -S . -B build -DGRANULAR_FREEZE_JUCE_SOURCE_DIR=/path/to/JUCE
 
-Note the variable is `JUCE_SOURCE_DIR`, not `JUCE_DIR`. There is no JUCE
-submodule in this repository, so `git submodule update` does nothing.
+Do not use `JUCE_SOURCE_DIR` as caller input. FetchContent reserves it
+internally. There is no JUCE submodule in this repository.
 
 ## Build
 
-macOS:
+The release-candidate macOS build is universal2 and targets macOS 12.0 or
+newer:
 
-    cmake -S . -B build -G "Xcode"
+    cmake -S . -B build -G Xcode \
+      '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64' \
+      -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
     cmake --build build --config Release --parallel
 
-Windows (default Visual Studio generator):
+On Windows, preserve CMake's default Visual Studio generator:
 
     cmake -S . -B build
     cmake --build build --config Release --parallel
 
-## Artifacts
+The plugin bundles are normally written under:
 
     build/src/GranularFreeze_artefacts/Release/VST3/Granular Freeze.vst3
     build/src/GranularFreeze_artefacts/Release/AU/Granular Freeze.component   # macOS only
 
-Note the space in the product name — quote these paths in shell commands.
+The product name contains a space, so quote these paths in shell commands.
 
-## Tests
+## Offline behavioral tests
 
-`tests/PluginTests.cpp` drives the AudioProcessor directly with generated
-signals and asserts on the output. No host and no audio device are needed, and
-it runs in CI on both platforms.
+`tests/PluginTests.cpp` drives the AudioProcessor with generated signals. It
+needs neither a host nor an audio device. Build it, locate the executable
+without assuming a generator-specific output path, and execute it.
+
+macOS or another POSIX shell:
 
     cmake --build build --config Release --target GranularFreezeTests --parallel
-    "build/tests/GranularFreezeTests_artefacts/Release/GranularFreezeTests"
+    test_binary=$(find build -type f -name GranularFreezeTests -print -quit)
+    test -n "$test_binary" || { echo "GranularFreezeTests not found" >&2; exit 1; }
+    "$test_binary"
 
-It covers pass-through fidelity, L/R alignment while frozen, that freeze holds
-audio when the input goes silent, that neither freeze nor unfreeze produces a
-discontinuity, the pitch ratio, and the absence of NaN/Inf. Exit code is
-non-zero on failure.
+Windows PowerShell:
 
-Both defects found during the initial bring-up — freeze outputting silence, and
-a click at the loop point — were invisible to the compiler and to auval, and
-were caught here. Add a case when you change the DSP.
+    cmake --build build --config Release --target GranularFreezeTests --parallel
+    $testBinary = Get-ChildItem build -Recurse -File -Filter GranularFreezeTests.exe | Select-Object -First 1
+    if (-not $testBinary) { throw "GranularFreezeTests.exe not found" }
+    & $testBinary.FullName
+
+The nine assertions cover non-silent pass-through, stereo alignment,
+freeze-held audio, click-safe freeze and unfreeze transitions, pitch-rate
+behavior, finite output, and a sane output range. Exit code is non-zero on
+failure. Add a behavioral case whenever the DSP changes.
+
+The optional `GranularFreezeRender` target writes a dry reference plus five
+freeze cases and prints objective measurements. It is a listening aid, not a
+substitute for a DAW test:
+
+    cmake --build build --config Release --target GranularFreezeRender --parallel
+
+Locate and invoke it the same way as the test binary, passing an output
+directory as its only argument.
+
+## Package the candidate
+
+Use the repository scripts rather than manually zipping build directories:
+
+    bash ./scripts/package_mac.sh build build/Granular-Freeze-macOS.zip
+
+    pwsh -File ./scripts/package_win.ps1 -BuildDirectory build -OutputZip build/Granular-Freeze-Windows.zip
+
+The macOS script requires exactly one AU and one VST3, exact arm64 and x86_64
+slices, macOS 12.0 in every slice, valid ad-hoc signatures, required documents,
+and one clean archive root. The Windows script requires exactly one outer VST3
+bundle, its expected x86_64 binary, required documents, and one clean archive
+root. Both fail if an expected artifact is absent. These packages are not
+production signed or notarized.
 
 ## AU validation (macOS)
 
@@ -64,31 +98,35 @@ were caught here. Add a case when you change the DSP.
     killall -9 AudioComponentRegistrar
     auval -v aufx GF01 GFZP
 
-`aufx GF01 GFZP` comes from the plugin/manufacturer codes in
-`src/CMakeLists.txt`. auval renders at several sample rates and block sizes and
-exercises parameter automation, but it does not check that the effect sounds
-right — that still needs a DAW.
+`aufx GF01 GFZP` comes from the plugin and manufacturer codes in
+`src/CMakeLists.txt`. `auval` exercises loading and rendering, but it does not
+establish that the effect sounds right.
 
-## Testing in a host
+## DAW smoke test
 
-Copy the `.vst3` to `~/Library/Audio/Plug-Ins/VST3/` (macOS) or
-`C:\Program Files\Common Files\VST3\` (Windows), rescan in your DAW, and load it.
+Install the exact extracted draft assets, rescan in Reaper or another host,
+and record the host version, OS version, format, sample rate, and block size.
+At minimum:
 
-Worth checking by ear:
+- Load VST3; on macOS also load AU in a host that supports it.
+- Confirm dry pass-through before Freeze.
+- Toggle Freeze, mute the input, and confirm captured audio continues.
+- Move Pitch through 0.5x, 1.0x, and 2.0x and confirm playback rate responds.
+- Exercise short and long crossfade settings and repeated Freeze transitions.
+- Listen for clicks, dropouts, runaway level, denormals, or other glitches.
+- Save, close, and reopen the session to check parameter restoration.
+- Repeat representative checks at 44.1, 48, and 96 kHz and at small and large
+  block sizes.
 
-- Sample rates 44.1k / 48k / 96k and block sizes 64 / 256 / 1024.
-- Freeze within the first few seconds of loading, and after a long run — the
-  captured region grows until it reaches the 8-second buffer.
-- Fast and slow freeze toggling, listening at the transition and at the loop
-  point.
-- Pitch at the extremes (0.5x and 2.0x).
-
-Crossfade time is a parameter (`crossfadeMs`, 1-500 ms) with a slider in the
-UI; change it there rather than in code. Its default lives in
-`createParameterLayout()` in `src/PluginProcessor.cpp`.
+Do not mark the candidate validated until this has been performed by ear. See
+`docs/RELEASE.md` for the complete release gate.
 
 ## Troubleshooting
 
 - **CMake too old**: JUCE 8 needs >= 3.22.
-- **Plugin does not appear**: rescan, and check the host's plugin scan log.
-- Signing and notarization are not automated. See `docs/CI_SECRETS.md`.
+- **Skip tests and render utility**: configure with
+  `-DGRANULAR_FREEZE_BUILD_TESTS=OFF`.
+- **Plugin does not appear**: rescan and check the host's plugin scan log.
+- **Signing warnings**: production signing and notarization are not implemented;
+  the macOS candidate is ad-hoc signed and Windows is unsigned. See
+  `docs/CI_SECRETS.md`.

@@ -7,8 +7,13 @@ Author: Gabriel García Alonso · License: MIT
 
 ## Status
 
-Working prototype. It builds and passes tests on macOS and Windows, but has
-**not been released** and has not yet been evaluated by ear in a DAW.
+Working prototype. An earlier baseline passed macOS and Windows CI, but this
+candidate still requires fresh CI on both platforms. It has **not been
+released** and has not yet been evaluated by ear in a DAW.
+The current engineering candidate uses internal version `0.1.1` and the
+reserved candidate tag `v0.1.1-rc.1`. The existing `v0.1.0` tag is obsolete
+history and must not be moved, deleted, or reused. See
+[docs/RELEASE.md](docs/RELEASE.md) for the candidate gates.
 
 **Implemented**
 
@@ -18,14 +23,15 @@ Working prototype. It builds and passes tests on macOS and Windows, but has
 - Parameters via `AudioProcessorValueTreeState` — automatable, and saved with
   the session
 - UI with freeze toggle, pitch and crossfade-time sliders
-- CI on macOS + Windows with an offline test suite
+- CI workflow for macOS + Windows with an offline test suite
 
 **Not implemented** — the granular engine the name implies is still ahead:
 
 - Grain envelope, density and size controls
 - Time-stretching independent of pitch
 - Preset system and performance bank
-- Code signing and notarization (builds are unsigned)
+- Production signing and notarization (the macOS candidate is ad-hoc signed;
+  Windows is unsigned)
 
 ## Parameters
 

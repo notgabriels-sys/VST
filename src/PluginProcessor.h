@@ -1,6 +1,6 @@
 #pragma once
 
-#include <JuceHeader.h>
+#include <juce_audio_processors/juce_audio_processors.h>
 
 // A compact prototype: circular buffer with a freeze toggle and coarse pitch control.
 class GranularFreezeAudioProcessor  : public juce::AudioProcessor
