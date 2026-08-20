@@ -1,6 +1,6 @@
 # Granular Freeze v0.2: Grain Core Design
 
-**Status:** Draft for written-spec approval
+**Status:** Approved by Gabriel
 
 **Date:** 2026-08-20
 
