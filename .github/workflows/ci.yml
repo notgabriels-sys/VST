@@ -43,13 +43,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Locate the console app: Xcode and MSVC put it in different places.
-          BIN=$(find build -type f -name 'GranularFreezeTests' -o -type f -name 'GranularFreezeTests.exe' | head -n1)
-          if [ -z "$BIN" ]; then
-            echo "test binary not found under build/"; exit 1
-          fi
-          echo "running $BIN"
-          "$BIN"
+          for NAME in GranularFreezeEngineTests GranularFreezeTests; do
+            BIN=$(find build -type f \( -name "$NAME" -o -name "$NAME.exe" \) | head -n1)
+            if [ -z "$BIN" ]; then
+              echo "$NAME binary not found under build/"
+              exit 1
+            fi
+            echo "running $BIN"
+            "$BIN"
+          done
 
       - name: Package (macOS)
         if: matrix.os == 'macos-latest'
