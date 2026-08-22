@@ -22,12 +22,21 @@ GranularFreezeAudioProcessorEditor::GranularFreezeAudioProcessorEditor (Granular
     addAndMakeVisible (crossfadeLabel);
     crossfadeLabel.attachToComponent (&crossfadeSlider, true);
 
+    // Hold slider
+    addAndMakeVisible (holdSlider);
+    holdSlider.setRange (50.0, 10000.0, 1.0);
+    holdSlider.setSkewFactor (0.4);              // matches the parameter's skew
+    holdSlider.setTextValueSuffix (" ms");
+    addAndMakeVisible (holdLabel);
+    holdLabel.attachToComponent (&holdSlider, true);
+
     // Attach UI to parameters via APVTS
     freezeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "freeze", freezeButton);
     pitchAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "pitch", pitchSlider);
     crossfadeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "crossfadeMs", crossfadeSlider);
+    holdAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "holdMs", holdSlider);
 
-    setSize (420, 160);
+    setSize (420, 200);
 }
 
 GranularFreezeAudioProcessorEditor::~GranularFreezeAudioProcessorEditor() {}
@@ -62,4 +71,8 @@ void GranularFreezeAudioProcessorEditor::resized()
     auto crossfadeRow = area.removeFromTop (40).reduced (6);
     crossfadeRow.removeFromLeft (labelWidth);
     crossfadeSlider.setBounds (crossfadeRow);
+
+    auto holdRow = area.removeFromTop (40).reduced (6);
+    holdRow.removeFromLeft (labelWidth);
+    holdSlider.setBounds (holdRow);
 }

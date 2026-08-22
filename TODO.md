@@ -9,9 +9,9 @@
 - [ ] Verify both downloaded ZIPs against `SHA256SUMS.txt` and inspect their
       contents before installing them
 - [ ] Evaluate in a DAW by ear — nothing here has been listened to yet
-- [ ] Decide whether Freeze should hold a shorter recent window rather than
-      loop the captured span. Current behaviour is closer to a looper than a
-      conventional short freeze.
+- [ ] Confirm the `holdMs` default (1000 ms) feels right by ear. Freeze now
+      holds a recent window rather than looping the whole capture, per
+      docs/PRODUCT_SPEC.md; the range and default are a judgement call.
 - [ ] Validate the exact macOS and Windows assets from the draft release in
       target DAWs before publishing
 - [ ] Confirm the JUCE 8 licensing basis for the intended distribution model

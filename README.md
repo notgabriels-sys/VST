@@ -22,7 +22,9 @@ history and must not be moved, deleted, or reused. See
 - Pitch control over frozen playback (0.5x–2.0x, cubic interpolation)
 - Parameters via `AudioProcessorValueTreeState` — automatable, and saved with
   the session
-- UI with freeze toggle, pitch and crossfade-time sliders
+- Adjustable hold length, so freeze captures the most recent slice rather
+  than replaying the whole capture buffer
+- UI with freeze toggle, pitch, crossfade-time and hold-length sliders
 - CI workflow for macOS + Windows with an offline test suite
 
 **Not implemented** — the granular engine the name implies is still ahead:
@@ -40,9 +42,11 @@ history and must not be moved, deleted, or reused. See
 | `freeze` | on / off | off |
 | `pitch` | 0.5x – 2.0x | 1.0x |
 | `crossfadeMs` | 1 – 500 ms | 30 ms |
+| `holdMs` | 50 ms – 10 s | 1000 ms |
 
-Stereo in / stereo out only. The capture buffer is 8 seconds; frozen playback
-loops whatever has been captured so far, which grows up to that limit.
+Stereo in / stereo out only. The capture buffer is 8 seconds. Engaging Freeze
+pins a window of the most recent `holdMs` of that capture and loops it, clamped
+to however much has actually been captured so far.
 
 ## Build
 

@@ -56,6 +56,13 @@ private:
     // still-zeroed remainder and freeze outputs silence.
     int validSamples = 0;
 
+    // The slice of circularBuffer that freeze holds and loops: holdLength
+    // samples beginning at buffer index holdStart. Fixed when freeze engages,
+    // so the held audio is the most RECENT holdMs rather than the whole
+    // capture read from its oldest sample.
+    int holdStart = 0;
+    int holdLength = 0;
+
     // Crossfade smoothing when toggling freeze (in samples)
     int crossfadeSamples = 0;
     int crossfadePos = 0; // counts down
