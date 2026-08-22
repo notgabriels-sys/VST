@@ -29,12 +29,21 @@ struct Source
     double lp[2] {};
     const double freqs[6] { 110.0, 110.6, 164.81, 165.4, 220.0, 277.18 };
 
+    double elapsed = 0.0;
+
     void next (float& l, float& r)
     {
+        // Step the whole chord up two semitones every second. Without a source
+        // that changes over time, every hold length would hold the same chord
+        // and the parameter would be inaudible.
+        elapsed += 1.0 / SR;
+        const int step = (int) std::floor (elapsed);
+        const double transpose = std::pow (2.0, (step * 2) / 12.0);
+
         double sum = 0.0;
         for (int i = 0; i < 6; ++i)
         {
-            ph[i] += freqs[i] / SR;
+            ph[i] += (freqs[i] * transpose) / SR;
             if (ph[i] >= 1.0) ph[i] -= 1.0;
             sum += (2.0 * ph[i] - 1.0) * 0.16;          // saw
         }
@@ -51,7 +60,7 @@ struct Rendered
     std::vector<int> freezeOnAt, freezeOffAt;
 };
 
-Rendered render (const juce::String& label, float pitch, float crossfadeMs,
+Rendered render (const juce::String& label, float pitch, float crossfadeMs, float holdMs,
                  int preBlocks, int frozenBlocks, int postBlocks)
 {
     GranularFreezeAudioProcessor p;
@@ -59,6 +68,7 @@ Rendered render (const juce::String& label, float pitch, float crossfadeMs,
     p.prepareToPlay (SR, BS);
     setParam (p, "pitch", pitch);
     setParam (p, "crossfadeMs", crossfadeMs);
+    setParam (p, "holdMs", holdMs);
     setParam (p, "freeze", 0.0f);
 
     juce::AudioBuffer<float> buf (2, BS);
@@ -157,16 +167,24 @@ int main (int argc, char** argv)
     const juce::File outDir (argc > 1 ? juce::String (argv[1]) : juce::String ("/tmp/gf-demo"));
     outDir.createDirectory();
 
-    struct Case { const char* name; float pitch; float xfade; };
+    struct Case { const char* name; float pitch; float xfade; float hold; };
     const Case cases[] {
-        { "freeze-normal",      1.0f,  30.0f },
-        { "freeze-octave-up",   2.0f,  30.0f },
-        { "freeze-octave-down", 0.5f,  30.0f },
-        { "freeze-long-xfade",  1.0f, 300.0f },
-        { "freeze-short-xfade", 1.0f,   1.0f },
+        // Hold-length sweep. The source steps up two semitones per second, so a
+        // short hold locks onto the last step while a long hold loops back
+        // through several of them.
+        { "hold-0100ms",        1.0f,  30.0f,   100.0f },
+        { "hold-0250ms",        1.0f,  30.0f,   250.0f },
+        { "hold-0500ms",        1.0f,  30.0f,   500.0f },
+        { "hold-1000ms-default",1.0f,  30.0f,  1000.0f },
+        { "hold-2000ms",        1.0f,  30.0f,  2000.0f },
+        { "hold-4000ms",        1.0f,  30.0f,  4000.0f },
+        // Pitch and crossfade behaviour at the default hold.
+        { "freeze-octave-up",   2.0f,  30.0f,  1000.0f },
+        { "freeze-octave-down", 0.5f,  30.0f,  1000.0f },
+        { "freeze-short-xfade", 1.0f,   1.0f,  1000.0f },
     };
 
-    std::printf ("%-20s %8s %8s %9s %10s %9s %9s\n",
+    std::printf ("%-22s %8s %8s %9s %10s %9s %9s\n",
                  "case", "peak", "rms", "dc", "maxstep", "zcr_src", "zcr_frz");
     std::printf ("%s\n", juce::String::repeatedString ("-", 78).toRawUTF8());
 
@@ -179,13 +197,13 @@ int main (int argc, char** argv)
         setParam (p, "freeze", 0.0f);
         juce::AudioBuffer<float> buf (2, BS); juce::MidiBuffer m; Source src;
         std::vector<float> d;
-        for (int b = 0; b < 180; ++b)
+        for (int b = 0; b < 500; ++b)
         {
             for (int i = 0; i < BS; ++i) { float l, r; src.next (l, r); buf.setSample (0,i,l); buf.setSample (1,i,r); }
             m.clear(); p.processBlock (buf, m);
             for (int i = 0; i < BS; ++i) d.push_back (buf.getSample (0, i));
         }
-        std::printf ("%-20s %8.4f %8.4f %9.2e %10.4f %9.0f %9s\n", "dry-reference",
+        std::printf ("%-22s %8.4f %8.4f %9.2e %10.4f %9.0f %9s\n", "dry-reference",
                      peak (d, 0, d.size()), rms (d, 0, d.size()), dc (d, 0, d.size()),
                      maxStep (d, 0, d.size()), zcr (d, 0, d.size()), "-");
     }
@@ -193,7 +211,7 @@ int main (int argc, char** argv)
     for (const auto& c : cases)
     {
         // 40 blocks live (~0.43 s captured), 120 frozen, 20 back to live
-        auto r = render (c.name, c.pitch, c.xfade, 40, 120, 20);
+        auto r = render (c.name, c.pitch, c.xfade, c.hold, 400, 200, 20);
         const size_t on  = (size_t) r.freezeOnAt[0];
         const size_t off = (size_t) r.freezeOffAt[0];
         const size_t xf  = (size_t) std::round (c.xfade * 0.001 * SR);
@@ -201,7 +219,7 @@ int main (int argc, char** argv)
         // measure the settled frozen region, past the crossfade
         const size_t fa = std::min (on + xf * 2, off), fb = off;
 
-        std::printf ("%-20s %8.4f %8.4f %9.2e %10.4f %9.0f %9.0f\n",
+        std::printf ("%-22s %8.4f %8.4f %9.2e %10.4f %9.0f %9.0f\n",
                      c.name, peak (r.l, fa, fb), rms (r.l, fa, fb), dc (r.l, fa, fb),
                      maxStep (r.l, fa, fb), zcr (r.l, 0, on), zcr (r.l, fa, fb));
 
@@ -215,7 +233,7 @@ int main (int argc, char** argv)
         p.prepareToPlay (SR, BS);
         setParam (p, "freeze", 0.0f);
         juce::AudioBuffer<float> buf (2, BS); juce::MidiBuffer m; Source src; Rendered dry;
-        for (int b = 0; b < 180; ++b)
+        for (int b = 0; b < 500; ++b)
         {
             for (int i = 0; i < BS; ++i) { float l, r; src.next (l, r); buf.setSample (0,i,l); buf.setSample (1,i,r); }
             m.clear(); p.processBlock (buf, m);
