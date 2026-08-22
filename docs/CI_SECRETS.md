@@ -2,21 +2,39 @@
 
 ## Current workflow state
 
-The release workflow now contains Developer ID signing, notarization and
-Authenticode signing. Every step is gated on its own secrets: with none set,
-each logs a warning and exits 0, so the unsigned candidate path behaves exactly
-as it did before. GitHub supplies `GITHUB_TOKEN` automatically; the release job
-limits it to `contents: write`.
+The release workflow contains Developer ID signing, notarization and
+Authenticode signing. Pull requests exercise the unsigned build/package path.
+A manual run can exercise signing without creating a release, and only
+newly created `v0.1.1-rc.*` tag pushes can create a private draft prerelease.
+Force-moved/reused tags are rejected, and the publish job fails if any release
+already exists for the tag instead of updating it. GitHub supplies
+`GITHUB_TOKEN` automatically; only the draft-release job receives
+`contents: write`.
 
-**None of the signing paths has ever executed.** No certificates exist, so only
-the skip branches have run. Treat the first signed tag as a debugging run, not
-a release.
+Secret handling is fail-closed:
+
+- an entirely absent secret set produces an explicitly unsigned tag candidate;
+- a partial secret set fails the corresponding platform job;
+- a manual run with `sign_artifacts` enabled fails unless every signing and
+  notarization secret below is configured;
+- a tag run with mixed whole-platform outcomes (for example, signed Windows
+  but unsigned macOS) fails before any draft release is created;
+- the release notes are composed from status files written after successful
+  operations, never from secret presence alone.
+
+**None of the secret-dependent signing paths has ever executed.** As verified
+on 2026-08-22, the repository has no Actions secrets. Treat the first signed
+manual run as a debugging run, not a release.
 
 Until secrets are added, macOS bundles remain ad-hoc signed and Windows bundles
 unsigned. Do not publish or sell those candidate files.
 
-The draft release notes report which of the three actually happened rather than
-asserting the build is unsigned, so a signed build is not mislabelled.
+The workflow removes temporary certificate/key files and the temporary macOS
+keychain even when a signing or notarization command fails. The macOS packager
+uses `--preserve-signature` after Developer ID signing and stapling so it cannot
+replace those signatures with ad-hoc ones. In that mode it follows Apple's
+signed-ZIP `ditto -c -k --keepParent` recipe so resource data and extended
+attributes are not deliberately stripped.
 
 ## Production-signing contract — now read by the workflow
 
@@ -63,7 +81,7 @@ add Gumroad secrets merely for the current candidate workflow.
 
 ## Adding secrets safely
 
-After the signing implementation is reviewed, add values under GitHub:
+After the signing implementation is reviewed and merged, add values under GitHub:
 Settings -> Secrets and variables -> Actions -> New repository secret.
 
 - Never commit certificates, private keys, passwords, or tokens.
@@ -76,10 +94,13 @@ Settings -> Secrets and variables -> Actions -> New repository secret.
 
 ## Ordering, and why it matters
 
-Signing runs before packaging. Notarization and stapling run after, and then the
-macOS zip is rebuilt so it contains the stapled tickets — stapling a zip does
-nothing, so an archive built before stapling ships without the ticket and
-Gatekeeper still consults Apple at launch.
+Signing runs before packaging. The signed ZIP is submitted to Apple;
+notarization and stapling run next, and then the macOS ZIP is rebuilt with
+`--preserve-signature` so it contains the stapled tickets. Stapling a ZIP itself
+does nothing, and force-signing after stapling would destroy the production
+signature/ticket relationship. Before recording `notarized=yes`, the workflow
+extracts the final distribution ZIP and re-runs strict code-signature and
+stapler validation against both extracted plugin bundles.
 
 `--options runtime` is set during signing because notarization rejects binaries
 without the hardened runtime.
