@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Package the unsigned macOS release candidate from an existing Release build.
+# Package the macOS release candidate from an existing Release build.
 
 set -euo pipefail
 
@@ -8,12 +8,17 @@ die() {
   exit 1
 }
 
-if [[ $# -ne 2 ]]; then
-  die "usage: $0 <build-directory> <output-zip>"
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+  die "usage: $0 <build-directory> <output-zip> [--preserve-signature]"
 fi
 
 build_directory=$1
 output_zip=$2
+preserve_signature=false
+if [[ $# -eq 3 ]]; then
+  [[ $3 == '--preserve-signature' ]] || die "unknown option: $3"
+  preserve_signature=true
+fi
 script_directory=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 repository_root=$(cd "$script_directory/.." && pwd -P)
 
@@ -70,11 +75,18 @@ verify_bundle() {
   done <<< "$normalized_architectures"
 }
 
-# This is deliberately ad-hoc signing only: the candidate has no Developer ID
-# certificate, notarization, or signing secret integration.
+verify_signature() {
+  codesign --verify --deep --strict "$1"
+}
+
+# Unsigned engineering candidates receive a valid ad-hoc bundle seal. A
+# Developer ID workflow passes --preserve-signature so packaging cannot replace
+# the production signature (or a stapled notarization ticket) with an ad-hoc one.
 for bundle in "${vst3_bundles[@]}" "${component_bundles[@]}"; do
-  codesign --force --deep --sign - "$bundle"
-  codesign --verify --deep --strict "$bundle"
+  if [[ $preserve_signature == false ]]; then
+    codesign --force --deep --sign - "$bundle"
+  fi
+  verify_signature "$bundle"
   verify_bundle "$bundle"
 done
 
@@ -85,18 +97,32 @@ ditto "$repository_root/README.md" "$staging_directory/README.md"
 ditto "$repository_root/LICENSE" "$staging_directory/LICENSE"
 
 for bundle in "$staging_directory/Granular Freeze.vst3" "$staging_directory/Granular Freeze.component"; do
-  codesign --verify --deep --strict "$bundle"
+  verify_signature "$bundle"
   verify_bundle "$bundle"
 done
 
-ditto -c -k --norsrc --keepParent "$staging_directory" "$output_zip"
+if [[ $preserve_signature == true ]]; then
+  # Follow Apple's signed-ZIP recipe so resource data and extended attributes,
+  # including a stapled ticket, survive extraction by macOS tools.
+  ditto -c -k --keepParent "$staging_directory" "$output_zip"
+else
+  ditto -c -k --norsrc --keepParent "$staging_directory" "$output_zip"
+fi
 
 archive_entries=$(unzip -Z1 "$output_zip")
 while IFS= read -r entry; do
- [[ -z "$entry" || "$entry" == "$archive_root/"* ]] || die "archive contains an unexpected root entry: $entry"
-  case "/$entry/" in
-    */._*/) die "archive contains AppleDouble metadata: $entry" ;;
-  esac
+  if [[ $preserve_signature == true ]]; then
+    [[ -z "$entry" || "$entry" == "$archive_root/"* ||
+       "$entry" == '__MACOSX/' || "$entry" == "__MACOSX/._$archive_root" ||
+       "$entry" == "__MACOSX/$archive_root/"* ]] ||
+      die "archive contains an unexpected root entry: $entry"
+  else
+    [[ -z "$entry" || "$entry" == "$archive_root/"* ]] ||
+      die "archive contains an unexpected root entry: $entry"
+    case "/$entry/" in
+      */._*/) die "archive contains AppleDouble metadata: $entry" ;;
+    esac
+  fi
 done <<< "$archive_entries"
 
 for required_entry in \
@@ -105,6 +131,24 @@ for required_entry in \
   "$archive_root/Granular Freeze.vst3/Contents/MacOS/Granular Freeze" \
   "$archive_root/Granular Freeze.component/Contents/MacOS/Granular Freeze"; do
   grep -Fxq "$required_entry" <<< "$archive_entries" || die "archive is missing required entry: $required_entry"
+done
+
+unzip -tq "$output_zip"
+
+# Validate the exact bytes a user receives, not only the pre-archive sources.
+verification_directory=$(mktemp -d "${TMPDIR:-/tmp}/granular-freeze-macos-verify.XXXXXX")
+cleanup_verification() {
+  [[ -n "${verification_directory:-}" && -d "$verification_directory" ]] &&
+    rm -rf "$verification_directory"
+}
+trap cleanup_verification EXIT
+ditto -x -k "$output_zip" "$verification_directory"
+for bundle in \
+  "$verification_directory/$archive_root/Granular Freeze.vst3" \
+  "$verification_directory/$archive_root/Granular Freeze.component"; do
+  [[ -d "$bundle" ]] || die "archive extraction is missing expected bundle: $bundle"
+  verify_signature "$bundle"
+  verify_bundle "$bundle"
 done
 
 echo "Packaged macOS candidate: $output_zip"

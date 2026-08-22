@@ -2,19 +2,44 @@
 
 ## Current workflow state
 
-The current CI and release workflows read no user-provided repository secrets.
-GitHub supplies `GITHUB_TOKEN` automatically; the release job limits it to
-`contents: write` so it can create an unsigned draft prerelease.
+The release workflow contains Developer ID signing, notarization and
+Authenticode signing. Pull requests exercise the unsigned build/package path.
+A manual run can exercise signing without creating a release, and only
+newly created `v0.1.1-rc.*` tag pushes can create a private draft prerelease.
+Force-moved/reused tags are rejected, and the publish job fails if any release
+already exists for the tag instead of updating it. GitHub supplies
+`GITHUB_TOKEN` automatically; only the draft-release job receives
+`contents: write`.
 
-Production signing, notarization, and Gumroad delivery are not implemented.
-macOS bundles are ad-hoc signed for structural verification only, and Windows
-bundles are unsigned. Do not publish or sell these candidate files.
+Secret handling is fail-closed:
 
-## Future production-signing contract
+- an entirely absent secret set produces an explicitly unsigned tag candidate;
+- a partial secret set fails the corresponding platform job;
+- a manual run with `sign_artifacts` enabled fails unless every signing and
+  notarization secret below is configured;
+- a tag run with mixed whole-platform outcomes (for example, signed Windows
+  but unsigned macOS) fails before any draft release is created;
+- the release notes are composed from status files written after successful
+  operations, never from secret presence alone.
 
-Nothing reads the names below today. If production signing is approved, make
-these the canonical GitHub Actions secret names and update the workflow to
-match them exactly.
+**None of the secret-dependent signing paths has ever executed.** As verified
+on 2026-08-22, the repository has no Actions secrets. Treat the first signed
+manual run as a debugging run, not a release.
+
+Until secrets are added, macOS bundles remain ad-hoc signed and Windows bundles
+unsigned. Do not publish or sell those candidate files.
+
+The workflow removes temporary certificate/key files and the temporary macOS
+keychain even when a signing or notarization command fails. The macOS packager
+uses `--preserve-signature` after Developer ID signing and stapling so it cannot
+replace those signatures with ad-hoc ones. In that mode it follows Apple's
+signed-ZIP `ditto -c -k --keepParent` recipe so resource data and extended
+attributes are not deliberately stripped.
+
+## Production-signing contract — now read by the workflow
+
+These are the exact names `.github/workflows/release.yml` reads. They are no
+longer suggestions; changing one means changing the workflow too.
 
 Developer ID signing requires the certificate and private key, not only its
 identity name:
@@ -24,15 +49,18 @@ identity name:
 - `MAC_KEYCHAIN_PASSWORD` - password for the temporary CI keychain
 - `MAC_CODESIGN_IDENTITY` - exact Developer ID Application identity
 
-Choose exactly one complete notarization route.
+Two notarization routes were documented. **The App Store Connect API key route
+is the one implemented**, because it needs no interactive Apple ID and no
+app-specific password rotation. The Apple ID route below is left for reference;
+using it would mean rewriting the notarize step.
 
-App Store Connect API key route:
+App Store Connect API key route (implemented):
 
 - `MAC_NOTARIZE_API_KEY` - base64-encoded `.p8` private key
 - `MAC_NOTARIZE_KEY_ID` - App Store Connect key ID
 - `MAC_NOTARIZE_ISSUER_ID` - App Store Connect issuer ID
 
-Apple ID route:
+Apple ID route (documented, NOT implemented):
 
 - `MAC_NOTARIZE_APPLE_ID` - Apple ID used for notarization
 - `MAC_NOTARIZE_APP_PASSWORD` - app-specific password
@@ -53,7 +81,7 @@ add Gumroad secrets merely for the current candidate workflow.
 
 ## Adding secrets safely
 
-After the signing implementation is reviewed, add values under GitHub:
+After the signing implementation is reviewed and merged, add values under GitHub:
 Settings -> Secrets and variables -> Actions -> New repository secret.
 
 - Never commit certificates, private keys, passwords, or tokens.
@@ -63,3 +91,23 @@ Settings -> Secrets and variables -> Actions -> New repository secret.
 - Test signing and notarization with a non-public candidate before production.
 - Confirm every required secret name exists without reading or exposing its
   value.
+
+## Ordering, and why it matters
+
+Signing runs before packaging. The signed ZIP is submitted to Apple;
+notarization and stapling run next, and then the macOS ZIP is rebuilt with
+`--preserve-signature` so it contains the stapled tickets. Stapling a ZIP itself
+does nothing, and force-signing after stapling would destroy the production
+signature/ticket relationship. Before recording `notarized=yes`, the workflow
+extracts the final distribution ZIP and re-runs strict code-signature and
+stapler validation against both extracted plugin bundles.
+
+`--options runtime` is set during signing because notarization rejects binaries
+without the hardened runtime.
+
+Likely first-run friction: the exact `MAC_CODESIGN_IDENTITY` string, keychain
+partition-list access on the runner, and notarization rejections.
+
+To base64 a certificate without it landing in shell history:
+
+    base64 -i Certificates.p12 | pbcopy
