@@ -210,7 +210,7 @@ int main (int argc, char** argv)
 
     for (const auto& c : cases)
     {
-        // 40 blocks live (~0.43 s captured), 120 frozen, 20 back to live
+        // 400 blocks live (~4.27 s captured), 200 frozen, 20 back to live.
         auto r = render (c.name, c.pitch, c.xfade, c.hold, 400, 200, 20);
         const size_t on  = (size_t) r.freezeOnAt[0];
         const size_t off = (size_t) r.freezeOffAt[0];

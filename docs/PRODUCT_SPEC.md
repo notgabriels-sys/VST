@@ -2,15 +2,20 @@
 
 ## Status of this document
 
-This describes the intended granular product, not the contents of the current
-engineering candidate. Internal version `0.1.1` is a stereo freeze/looper
-prototype. It has an eight-second capture buffer, crossfaded looping, Freeze,
-0.5x-2.0x pitch-rate control, and a 1-500 ms crossfade control.
+This describes the intended granular product, not only the current engineering
+implementation. Internal version `0.1.2` is a stereo freeze/looper prototype
+with a ten-second capture buffer, a requested 50 ms-10 s held window clamped to
+available history, crossfaded looping, Freeze, 0.5x-2.0x pitch-rate control,
+and a 1-500 ms crossfade control.
 
-The candidate does not yet have a granular engine, independent time-stretch,
+The exact older `v0.1.1-rc.1` private-draft assets passed AU validation and a
+limited Ableton Live 12.4.2 AU/VST3 functional smoke test. That candidate
+predates Hold Length, so current Hold behavior has not yet been validated in a
+DAW. Subjective musical/sound-quality approval also remains unverified.
+
+The prototype does not yet have a granular engine, independent time-stretch,
 grain size/density/position controls, feedback, scatter, presets, a waveform
-display, or performance slots. It has not been evaluated by ear in a DAW and
-is not a production-ready paid product.
+display, or performance slots. It is not a production-ready paid product.
 
 ## Intended product
 
@@ -22,7 +27,8 @@ is not a production-ready paid product.
 
 ### Core features
 
-- Freeze/hold with adjustable 50 ms-10 s buffer
+- Freeze/hold with an adjustable 50 ms-10 s requested held window, clamped to
+  available capture history
 - Grain size 0.5-200 ms, density 0-200 grains/s, and buffer position
 - Pitch range of +/-48 semitones
 - Feedback and crossfade controls
@@ -54,9 +60,15 @@ is not a production-ready paid product.
 - CI produces validated archives for both platforms.
 - Production artifacts are signed; macOS is notarized.
 
-The current candidate meets only part of this list. Offline signal tests and a
-successful build do not satisfy the audible granular-playback or DAW-host
-criteria.
+The workflows support cross-platform builds and validated archives, and prior
+baseline revisions have exercised that path. Fresh macOS and Windows CI/archive
+verification for the exact current revision is still pending. The older exact
+draft assets met limited Ableton AU/VST3 loading and functional smoke criteria,
+but the current Hold revision still requires exact-artifact host validation.
+The prototype cannot meet audible granular-playback acceptance because it has
+no granular engine. Subjective sound approval, credential-tested production
+signing/notarization, a documented JUCE distribution basis, and public-release
+approval also remain open.
 
 ## Commercial planning
 
