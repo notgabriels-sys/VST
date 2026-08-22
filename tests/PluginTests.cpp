@@ -238,6 +238,36 @@ int main()
                "max|L| = " + juce::String (maxAbs (l)));
     }
 
+    // ---------------------------------------------------------------- 8
+    // holdMs decides HOW MUCH of the recent capture freeze holds. Feed a long
+    // stretch of low tone, then a short stretch of high tone, then freeze. With
+    // a short hold the frozen output must reflect the RECENT (high) material; a
+    // long hold spans both and lands lower. Before holdMs existed, freeze always
+    // replayed the whole capture starting at its oldest sample, so a short hold
+    // was impossible and this test could not pass.
+    {
+        auto frozenRateForHold = [] (float holdMs)
+        {
+            Rig r;
+            setParam (r.proc, "freeze", 0.0f);
+            setParam (r.proc, "crossfadeMs", 5.0f);
+            setParam (r.proc, "holdMs", holdMs);
+            r.run (40, 200.0);                 // old material, ~0.43 s
+            r.run (16, 1600.0);                // recent material, ~0.17 s
+            setParam (r.proc, "freeze", 1.0f);
+            std::vector<float> l;
+            r.run (24, 1600.0, &l, nullptr, /*silentInput*/ true);
+            return zeroCrossings (l, l.size() / 2, l.size());
+        };
+
+        const int shortHold = frozenRateForHold (80.0f);    // inside the recent tone
+        const int longHold  = frozenRateForHold (500.0f);   // spans back into the low tone
+
+        check (shortHold > longHold * 2, "short hold captures recent audio, not the whole buffer",
+               "crossings: 80ms hold = " + juce::String (shortHold)
+                   + ", 500ms hold = " + juce::String (longHold));
+    }
+
     std::printf ("\n%s (%d failure%s)\n", failures == 0 ? "ALL TESTS PASSED" : "TESTS FAILED",
                  failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
