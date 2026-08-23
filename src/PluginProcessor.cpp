@@ -6,15 +6,15 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
 {
     using APVTS = juce::AudioProcessorValueTreeState;
     APVTS::ParameterLayout layout;
-    layout.add (std::make_unique<juce::AudioParameterBool> ("freeze", "Freeze", false));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("pitch", "Pitch", juce::NormalisableRange<float> (0.5f, 2.0f, 0.01f), 1.0f));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "freeze", 1 }, "Freeze", false));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "pitch", 1 }, "Pitch", juce::NormalisableRange<float> (0.5f, 2.0f, 0.01f), 1.0f));
     // Crossfade time in milliseconds (for freeze/unfreeze smoothing)
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("crossfadeMs", "Crossfade (ms)", juce::NormalisableRange<float> (1.0f, 500.0f, 1.0f), 30.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "crossfadeMs", 1 }, "Crossfade (ms)", juce::NormalisableRange<float> (1.0f, 500.0f, 1.0f), 30.0f));
     // How much of the most recent audio the freeze holds. Without this, freeze
-    // looped the entire capture from the oldest sample forward -- up to 8
+    // looped the entire capture from the oldest sample forward -- up to 10
     // seconds of history, which behaves like a looper rather than a freeze.
-    // Range per docs/PRODUCT_SPEC.md ("adjustable buffer length 50ms - 10s").
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("holdMs", "Hold (ms)", juce::NormalisableRange<float> (50.0f, 10000.0f, 1.0f, 0.4f), 1000.0f));
+    // Range per docs/PRODUCT_SPEC.md ("requested held window 50ms - 10s").
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "holdMs", 2 }, "Hold (ms)", juce::NormalisableRange<float> (50.0f, 10000.0f, 1.0f, 0.4f), 1000.0f));
     return layout;
 }
 
@@ -39,8 +39,8 @@ GranularFreezeAudioProcessor::~GranularFreezeAudioProcessor() {}
 void GranularFreezeAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     currentSampleRate = sampleRate;
-    // Allocate a max buffer of 8 seconds for prototype
-    const double bufferSeconds = 8.0;
+    // Match the maximum public Hold range so every selectable value is real.
+    const double bufferSeconds = 10.0;
     maxBufferSize = static_cast<int> (std::ceil (bufferSeconds * currentSampleRate));
 
     const int numOutputChannels = getTotalNumOutputChannels();

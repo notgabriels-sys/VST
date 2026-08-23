@@ -62,14 +62,18 @@ Windows PowerShell:
     if (-not $testBinary) { throw "GranularFreezeTests.exe not found" }
     & $testBinary.FullName
 
-The nine assertions cover non-silent pass-through, stereo alignment,
+The twelve assertions cover non-silent pass-through, stereo alignment,
 freeze-held audio, click-safe freeze and unfreeze transitions, pitch-rate
-behavior, finite output, and a sane output range. Exit code is non-zero on
-failure. Add a behavioral case whenever the DSP changes.
+behavior, finite output, sane output range, recent-window Hold behavior, stable
+AU parameter generations, and a sample-exact check that the physical Hold
+endpoint reaches 10,000 ms. Exit code is non-zero on failure. Add or update a
+behavioral case whenever DSP or host-visible parameter behavior changes.
 
-The optional `GranularFreezeRender` target writes a dry reference plus five
-freeze cases and prints objective measurements. It is a listening aid, not a
-substitute for a DAW test:
+The optional `GranularFreezeRender` target writes a dry reference plus nine
+freeze cases: six Hold lengths, octave-up and octave-down pitch cases, and a
+minimum-crossfade case. It prints objective measurements and produces listening
+material, but it is not a substitute for exact-artifact DAW validation or
+owner sound-quality approval:
 
     cmake --build build --config Release --target GranularFreezeRender --parallel
 
@@ -84,17 +88,37 @@ Use the repository scripts rather than manually zipping build directories:
 
     pwsh -File ./scripts/package_win.ps1 -BuildDirectory build -OutputZip build/Granular-Freeze-Windows.zip
 
-The macOS script requires exactly one AU and one VST3, exact arm64 and x86_64
-slices, macOS 12.0 in every slice, valid ad-hoc signatures, required documents,
-and one clean archive root. The Windows script requires exactly one outer VST3
-bundle, its expected x86_64 binary, required documents, and one clean archive
-root. Both fail if an expected artifact is absent. These packages are not
-production signed or notarized.
+In default engineering mode, the macOS script requires exactly one AU and one
+VST3, applies and verifies ad-hoc bundle seals, verifies exact arm64 and x86_64
+slices and macOS 12.0 deployment targets, and validates the final extracted
+archive. With `--preserve-signature`, it does not re-sign the bundles, allowing
+the surrounding release workflow to preserve Developer ID signatures and
+stapled-ticket data. The workflow separately verifies Developer ID identity,
+hardened runtime, and stapled tickets after packaging and extraction. It uses
+preservation mode after signing and again after notarization.
+
+The Windows packager validates the exact outer VST3 bundle, expected x86_64
+binary, required documents, and archive root. Both scripts fail if an expected
+artifact is absent. The credential-dependent production paths are implemented
+but have never run with real credentials; all currently verified artifacts
+remain ad-hoc signed on macOS and unsigned on Windows.
 
 ## AU validation (macOS)
 
-    cp -R "build/src/GranularFreeze_artefacts/Release/AU/Granular Freeze.component" \
-          ~/Library/Audio/Plug-Ins/Components/
+First extract the exact Actions or draft ZIP being evaluated. Replace the path
+below with that extraction directory. Move any existing component aside, then
+use `ditto`; `cp -R` can merge bundles and leave stale files behind.
+
+    candidate_root="/absolute/path/to/extracted/Granular Freeze-macOS"
+    candidate_component="$candidate_root/Granular Freeze.component"
+    installed_component="$HOME/Library/Audio/Plug-Ins/Components/Granular Freeze.component"
+    backup_component="${installed_component}.before-v0.1.2"
+    test -d "$candidate_component"
+    test ! -e "$backup_component"
+    if test -e "$installed_component"; then mv "$installed_component" "$backup_component"; fi
+    ditto "$candidate_component" "$installed_component"
+    diff -qr "$candidate_component" "$installed_component"
+    codesign --verify --deep --strict "$installed_component"
     killall -9 AudioComponentRegistrar
     auval -v aufx GF01 GFZP
 
@@ -102,24 +126,56 @@ production signed or notarized.
 `src/CMakeLists.txt`. `auval` exercises loading and rendering, but it does not
 establish that the effect sounds right.
 
+Recorded evidence: the installed AU from the older `v0.1.1-rc.1` private draft
+passed `auval -v aufx GF01 GFZP` outside the restricted filesystem sandbox with
+exit status 0 and `AU VALIDATION SUCCEEDED`. Sandboxed empty-catalog failures
+are non-authoritative. That candidate predates Hold Length, so rerun `auval`
+against the exact future candidate and require four global parameters in the
+preserved order: Pitch, Freeze, Crossfade, Hold.
+
 ## DAW smoke test
 
-Install the exact extracted draft assets, rescan in Reaper or another host,
-and record the host version, OS version, format, sample rate, and block size.
-At minimum:
+Install the exact extracted artifacts being evaluated: use GitHub draft assets
+for a tagged candidate and exact Actions artifacts for an unreleased branch or
+`main` revision. Record the commit/tag, artifact identity, host version, OS
+version, format, sample rate, and block size. At minimum:
 
 - Load VST3; on macOS also load AU in a host that supports it.
+- Confirm the corrected AU exposes four product parameters in the preserved
+  order Pitch, Freeze, Crossfade, Hold. Confirm VST3 exposes those four plus
+  JUCE's wrapper-owned Bypass parameter.
 - Confirm dry pass-through before Freeze.
 - Toggle Freeze, mute the input, and confirm captured audio continues.
 - Move Pitch through 0.5x, 1.0x, and 2.0x and confirm playback rate responds.
+- Move Hold through representative short, default, and long values such as
+  80 ms, 1000 ms, and 9000 ms. Refreeze newly captured material and confirm the
+  held window changes and continues to select recent audio rather than replaying
+  the entire capture history.
+- Confirm the intentional latch behavior: moving Hold while already frozen
+  affects the next off-to-on Freeze transition, not the active held window.
 - Exercise short and long crossfade settings and repeated Freeze transitions.
 - Listen for clicks, dropouts, runaway level, denormals, or other glitches.
-- Save, close, and reopen the session to check parameter restoration.
+- Save, close, and reopen the session with a distinctive non-default Hold value
+  to check parameter restoration and automation. Only parameter values are
+  serialized; the captured frozen audio itself is not restored.
+- Run a separate cross-version AU automation migration smoke. With the exact
+  older `v0.1.1-rc.1` AU installed, save a session containing distinct Pitch,
+  Freeze, and Crossfade automation lanes. Close the host, replace that AU with
+  the exact `0.1.2` candidate, reopen the session, and verify every legacy lane
+  still controls the same parameter. Then add and exercise a separate Hold
+  automation lane. Record the old/new artifact hashes and observed lane mapping.
 - Repeat representative checks at 44.1, 48, and 96 kHz and at small and large
   block sizes.
 
-Do not mark the candidate validated until this has been performed by ear. See
-`docs/RELEASE.md` for the complete release gate.
+Recorded functional result: the exact older `v0.1.1-rc.1` AU and VST3 passed a
+limited Ableton Live 12.4.2 smoke test at 48 kHz, including loading, dry
+pass-through, Freeze hold with silent input, Pitch response, crossfade-control
+operation, rapid automation, bypass/re-enable, remove/reload, and zero
+host-reported dropouts. That test did not cover Hold, Bitwig, session
+restoration, all listed rates/block sizes, or owner sound-quality judgment.
+
+Do not mark the current revision or production candidate fully validated until
+the remaining checks and every gate in `docs/RELEASE.md` are complete.
 
 ## Troubleshooting
 
@@ -127,6 +183,7 @@ Do not mark the candidate validated until this has been performed by ear. See
 - **Skip tests and render utility**: configure with
   `-DGRANULAR_FREEZE_BUILD_TESTS=OFF`.
 - **Plugin does not appear**: rescan and check the host's plugin scan log.
-- **Signing warnings**: production signing and notarization are not implemented;
-  the macOS candidate is ad-hoc signed and Windows is unsigned. See
-  `docs/CI_SECRETS.md`.
+- **Signing warnings**: production signing, notarization, and Authenticode are
+  implemented in the release workflow but have never executed with real
+  credentials. Without complete secret sets, verified macOS artifacts are
+  ad-hoc signed and Windows artifacts are unsigned. See `docs/CI_SECRETS.md`.

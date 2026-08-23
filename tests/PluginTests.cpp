@@ -74,6 +74,28 @@ struct Rig
                 for (int i = 0; i < kBlockSize; ++i) outR->push_back (block.getSample (1, i));
         }
     }
+
+    // Processes an exact number of supplied samples, including a final partial
+    // block. This lets boundary tests place a marker at a sample-exact age.
+    void runInput (const std::vector<float>& input)
+    {
+        size_t offset = 0;
+        while (offset < input.size())
+        {
+            const int chunk = static_cast<int> (std::min<size_t> (kBlockSize, input.size() - offset));
+            juce::AudioBuffer<float> exactBlock { 2, chunk };
+            for (int i = 0; i < chunk; ++i)
+            {
+                const float sample = input[offset + static_cast<size_t> (i)];
+                exactBlock.setSample (0, i, sample);
+                exactBlock.setSample (1, i, sample);
+            }
+
+            midi.clear();
+            proc.processBlock (exactBlock, midi);
+            offset += static_cast<size_t> (chunk);
+        }
+    }
 };
 
 float maxAbs (const std::vector<float>& v, size_t from = 0)
@@ -266,6 +288,72 @@ int main()
         check (shortHold > longHold * 2, "short hold captures recent audio, not the whole buffer",
                "crossings: 80ms hold = " + juce::String (shortHold)
                    + ", 500ms hold = " + juce::String (longHold));
+    }
+
+    // ---------------------------------------------------------------- 9
+    // Logic and GarageBand may restore AU automation by parameter index. JUCE
+    // keeps that index stable only when later parameters use a higher version
+    // hint than every parameter from the earlier release. Hold was added after
+    // Freeze, Pitch and Crossfade, so it must live in a later generation.
+    {
+        GranularFreezeAudioProcessor p;
+        const auto* freeze    = p.apvts.getParameter ("freeze");
+        const auto* pitch     = p.apvts.getParameter ("pitch");
+        const auto* crossfade = p.apvts.getParameter ("crossfadeMs");
+        const auto* hold      = p.apvts.getParameter ("holdMs");
+
+        const bool stableHints = freeze != nullptr && freeze->getVersionHint() == 1
+                              && pitch != nullptr && pitch->getVersionHint() == 1
+                              && crossfade != nullptr && crossfade->getVersionHint() == 1
+                              && hold != nullptr && hold->getVersionHint() == 2;
+
+        check (stableHints, "AU parameter generations encode compatibility intent",
+               "expected legacy hints 1 and Hold hint 2");
+    }
+
+    // ---------------------------------------------------------------- 10
+    // The public Hold endpoint is exactly ten seconds. Capture a single marker
+    // at a known offset from the oldest sample of that window, then measure its
+    // repeat period. Even a one-sample-short physical buffer changes the period;
+    // the old eight-second buffer discards the marker entirely.
+    {
+        Rig r;
+        setParam (r.proc, "freeze", 0.0f);
+        setParam (r.proc, "crossfadeMs", 1.0f);
+        setParam (r.proc, "holdMs", 10000.0f);
+
+        constexpr int holdSamples = static_cast<int> (kSampleRate * 10.0);
+        constexpr int renderedBlocks = 938;
+        constexpr int captureSamples = renderedBlocks * kBlockSize;
+        constexpr int loopFadeSamples = static_cast<int> (kSampleRate * 0.001);
+        constexpr int markerInWindow = loopFadeSamples + 16;
+        constexpr int markerInCapture = captureSamples - holdSamples + markerInWindow;
+        static_assert (markerInCapture >= 0 && markerInCapture < captureSamples);
+
+        std::vector<float> capture (captureSamples, 0.0f);
+        capture[static_cast<size_t> (markerInCapture)] = 1.0f;
+        r.runInput (capture);
+        setParam (r.proc, "freeze", 1.0f);
+
+        std::vector<float> l;
+        r.run (renderedBlocks, 200.0, &l, nullptr, /*silentInput*/ true);
+
+        std::vector<size_t> markerPositions;
+        for (size_t i = 0; i < l.size(); ++i)
+            if (std::abs (l[i]) > 0.9f)
+                markerPositions.push_back (i);
+
+        const size_t expectedPeriod = static_cast<size_t> (holdSamples - loopFadeSamples);
+        const bool exactEndpoint = markerPositions.size() == 2
+                                && markerPositions[1] - markerPositions[0] == expectedPeriod;
+        const juce::String detail = markerPositions.size() == 2
+            ? "measured marker period "
+                  + juce::String (static_cast<juce::int64> (markerPositions[1] - markerPositions[0]))
+                  + ", expected " + juce::String (static_cast<juce::int64> (expectedPeriod))
+            : "detected " + juce::String (static_cast<int> (markerPositions.size()))
+                  + " marker samples, expected 2";
+
+        check (exactEndpoint, "ten-second Hold endpoint is physically available", detail);
     }
 
     std::printf ("\n%s (%d failure%s)\n", failures == 0 ? "ALL TESTS PASSED" : "TESTS FAILED",
