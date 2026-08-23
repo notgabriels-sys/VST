@@ -44,6 +44,11 @@ plus dry-reference.wav: exactly fourteen stereo 48 kHz/24-bit WAV listening
 aids. The CI workflow is configured to run both binaries on macOS and Windows;
 a local run is not remote-CI or DAW-listening evidence.
 
+The hardened candidate path uses pinned macOS and Windows runners, a universal
+macOS 12 build, strict archive scripts, and a secret-free unsigned draft
+workflow. Those paths still require remote execution and downloaded-asset
+inspection; their presence in the repository is not release evidence.
+
 Time-stretch, presets/performance banks, feedback, random scatter/modulation,
 waveform UI, signing/notarization, store work, and all commercial/release
 decisions are deferred, not current product claims. See

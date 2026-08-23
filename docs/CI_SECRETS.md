@@ -1,60 +1,65 @@
 # CI secrets
 
-## Wired up today
+## Current workflow state
 
-Only two secrets are read by any workflow. Both are optional and both are
-consumed by the Gumroad step in `.github/workflows/release.yml`:
+The current CI and release workflows read no user-provided repository secrets.
+GitHub supplies `GITHUB_TOKEN` automatically; the release job limits it to
+`contents: write` so it can create an unsigned draft prerelease.
 
-| Secret | Purpose |
-|---|---|
-| `GUMROAD_ACCESS_TOKEN` | Gumroad API access token |
-| `GUMROAD_PRODUCT_ID` | Product to attach the release zip to |
+Production signing, notarization, and Gumroad delivery are not implemented.
+macOS bundles are ad-hoc signed for structural verification only, and Windows
+bundles are unsigned. Do not publish or sell these candidate files.
 
-Use these names exactly. If either is missing the step logs that it is skipping
-and exits cleanly, so the release still succeeds without them.
+## Future production-signing contract
 
-An earlier version of this document named `GUMROAD_API_KEY`. Nothing reads that
-— setting it silently skips the upload.
+Nothing reads the names below today. If production signing is approved, make
+these the canonical GitHub Actions secret names and update the workflow to
+match them exactly.
 
-`GITHUB_TOKEN` is provided automatically by Actions; the publish job requests
-`permissions: contents: write` so it can create the release. No setup needed.
+Developer ID signing requires the certificate and private key, not only its
+identity name:
 
-**The Gumroad upload has never been exercised.** No tag has been pushed, so the
-first release will be its first real run.
+- `MAC_CODESIGN_P12_BASE64` - base64-encoded Developer ID Application `.p12`
+- `MAC_CODESIGN_P12_PASSWORD` - password protecting the `.p12`
+- `MAC_KEYCHAIN_PASSWORD` - password for the temporary CI keychain
+- `MAC_CODESIGN_IDENTITY` - exact Developer ID Application identity
 
-## Not implemented
+Choose exactly one complete notarization route.
 
-Code signing and notarization are **not** in any workflow. CI produces unsigned
-builds. macOS users will see Gatekeeper warnings and Windows users SmartScreen
-warnings.
+App Store Connect API key route:
 
-If you add signing later, these are the credentials you will need. The names are
-a suggestion — nothing reads them yet, so pick names and make the workflow match:
+- `MAC_NOTARIZE_API_KEY` - base64-encoded `.p8` private key
+- `MAC_NOTARIZE_KEY_ID` - App Store Connect key ID
+- `MAC_NOTARIZE_ISSUER_ID` - App Store Connect issuer ID
 
-**macOS** — Developer ID Application certificate, exported as .p12:
+Apple ID route:
 
-- `MACOS_CODESIGN_P12` — base64-encoded .p12
-- `MACOS_CODESIGN_P12_PASSPHRASE`
-- `APPLE_ID` and `APP_SPECIFIC_PASSWORD` for notarytool, or
-  `NOTARYTOOL_ISSUER` + `NOTARYTOOL_KEY` for an App Store Connect API key
+- `MAC_NOTARIZE_APPLE_ID` - Apple ID used for notarization
+- `MAC_NOTARIZE_APP_PASSWORD` - app-specific password
+- `MAC_NOTARIZE_TEAM_ID` - Apple Developer Team ID
 
-**Windows** — Authenticode certificate:
+Windows Authenticode signing requires:
 
-- `WIN_CODESIGN_PFX` — base64-encoded .pfx
-- `WIN_CODESIGN_PFX_PASSPHRASE`
+- `WIN_PFX_BASE64` - base64-encoded signing `.pfx`
+- `WIN_PFX_PASSWORD` - password protecting the `.pfx`
 
-A previous version of `docs/RELEASE.md` listed a second, conflicting set of
-names (`MACOS_CODESIGN_IDENTITY`, `WINDOWS_PFX_BASE64`, ...). Ignore those; this
-file is the single source.
+## Gumroad
 
-## Adding secrets
+The current official Gumroad API does not support creating products or
+uploading product content. The workflows therefore do not read
+`GUMROAD_ACCESS_TOKEN` or `GUMROAD_PRODUCT_ID`. Upload approved production
+files manually through the authenticated Gumroad product Content UI. Do not
+add Gumroad secrets merely for the current candidate workflow.
 
-Settings → Secrets and variables → Actions → New repository secret. Names must
-match what the workflow reads, exactly.
+## Adding secrets safely
 
-## Practices
+After the signing implementation is reviewed, add values under GitHub:
+Settings -> Secrets and variables -> Actions -> New repository secret.
 
-- Never commit certificates, .p12 or .pfx files. Store them as secrets.
-- Test signing and notarization locally on a Mac before wiring it into CI.
-- Unsigned builds are a legitimate starting point; signing can be added later
-  without changing the build.
+- Never commit certificates, private keys, passwords, or tokens.
+- Never print decoded values or enable shell tracing around secret handling.
+- Decode credentials only into runner-temporary files and remove them after
+  use.
+- Test signing and notarization with a non-public candidate before production.
+- Confirm every required secret name exists without reading or exposing its
+  value.

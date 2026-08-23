@@ -1,4 +1,4 @@
-# Build & Test — Granular Freeze
+# Build & Test - Granular Freeze
 
 ## Verification boundary
 
@@ -10,39 +10,46 @@ CI, signing/notarization, release readiness, or commercial validation.
 
 ## Prerequisites
 
-- **macOS**: Xcode + command line tools, CMake >= 3.22
+- **macOS**: Xcode and command line tools, CMake >= 3.22
 - **Windows**: Visual Studio 2022 with the C++ workload, CMake >= 3.22
-- **JUCE**: fetched automatically, see below
+- **JUCE**: fetched automatically as described below
 
 CMake 3.22 is a hard floor because JUCE 8 requires it.
 
 ## JUCE
 
-You do not need to install JUCE. `CMakeLists.txt` fetches JUCE 8.0.15 via
-`FetchContent` on first configure, which adds a few minutes to a cold build.
+You do not need to install JUCE. `CMakeLists.txt` fetches the pinned JUCE
+8.0.15 release on first configure, which can add a few minutes to a cold build.
 
-To build against a local JUCE checkout instead, set `JUCE_SOURCE_DIR`:
+To use a local JUCE checkout, set the project-specific override:
 
-    cmake -S . -B build -DJUCE_SOURCE_DIR=/path/to/JUCE
+    cmake -S . -B build -DGRANULAR_FREEZE_JUCE_SOURCE_DIR=/path/to/JUCE
 
-Note the variable is `JUCE_SOURCE_DIR`, not `JUCE_DIR`. There is no JUCE
-submodule in this repository, so `git submodule update` does nothing.
+Do not use `JUCE_SOURCE_DIR` as caller input. FetchContent reserves it
+internally. There is no JUCE submodule in this repository.
 
 ## Build
 
 ### macOS (POSIX shell)
 
-    cmake -S . -B build -G "Xcode"
+The release-candidate macOS build is universal2 and targets macOS 12.0 or
+newer:
+
+    cmake -S . -B build -G Xcode \
+      '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64' \
+      -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
     cmake --build build --config Release --parallel
 
 ### Windows (PowerShell)
+
+On Windows, preserve CMake's default Visual Studio generator:
 
     cmake -S . -B build
     if ($LASTEXITCODE -ne 0) { throw "CMake configure failed with exit code $LASTEXITCODE" }
     cmake --build build --config Release --parallel
     if ($LASTEXITCODE -ne 0) { throw "Release build failed with exit code $LASTEXITCODE" }
 
-## Artifacts
+The plugin bundles are normally written under:
 
 macOS:
 
@@ -65,20 +72,22 @@ they pass.
 ### macOS (POSIX shell)
 
     cmake --build build --config Release --target GranularFreezeEngineTests --parallel
-    "build/tests/GranularFreezeEngineTests_artefacts/Release/GranularFreezeEngineTests"
+    "build/tests/Release/GranularFreezeEngineTests"
     cmake --build build --config Release --target GranularFreezeTests --parallel
-    "build/tests/GranularFreezeTests_artefacts/Release/GranularFreezeTests"
+    test_binary=$(find build -type f -name GranularFreezeTests -print -quit)
+    test -n "$test_binary" || { echo "GranularFreezeTests not found" >&2; exit 1; }
+    "$test_binary"
 
 ### Windows (PowerShell)
 
     cmake --build build --config Release --target GranularFreezeEngineTests --parallel
     if ($LASTEXITCODE -ne 0) { throw "GranularFreezeEngineTests build failed with exit code $LASTEXITCODE" }
-    & ".\build\tests\GranularFreezeEngineTests_artefacts\Release\GranularFreezeEngineTests.exe"
+    & ".\build\tests\Release\GranularFreezeEngineTests.exe"
     if ($LASTEXITCODE -ne 0) { throw "GranularFreezeEngineTests failed with exit code $LASTEXITCODE" }
 
     cmake --build build --config Release --target GranularFreezeTests --parallel
     if ($LASTEXITCODE -ne 0) { throw "GranularFreezeTests build failed with exit code $LASTEXITCODE" }
-    & ".\build\tests\GranularFreezeTests_artefacts\Release\GranularFreezeTests.exe"
+    & ".\build\tests\Release\GranularFreezeTests.exe"
     if ($LASTEXITCODE -ne 0) { throw "GranularFreezeTests failed with exit code $LASTEXITCODE" }
 
 GranularFreezeEngineTests covers chronological circular reads, empty/short
@@ -123,7 +132,7 @@ maximum absolute L/R difference are diagnostics only.
 
     cmake --build build --config Release --target GranularFreezeRender --parallel
     GRAIN_RENDER_DIR=$(mktemp -d /tmp/granular-freeze-v02-renders.XXXXXX)
-    "build/tests/GranularFreezeRender_artefacts/Release/GranularFreezeRender" "$GRAIN_RENDER_DIR"
+    "build/tests/Release/GranularFreezeRender" "$GRAIN_RENDER_DIR"
 
 ### Build and render on Windows (PowerShell)
 
@@ -131,7 +140,7 @@ maximum absolute L/R difference are diagnostics only.
     if ($LASTEXITCODE -ne 0) { throw "GranularFreezeRender build failed with exit code $LASTEXITCODE" }
     $GrainRenderDir = Join-Path ([System.IO.Path]::GetTempPath()) ("granular-freeze-v02-renders-" + [guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path $GrainRenderDir | Out-Null
-    & ".\build\tests\GranularFreezeRender_artefacts\Release\GranularFreezeRender.exe" $GrainRenderDir
+    & ".\build\tests\Release\GranularFreezeRender.exe" $GrainRenderDir
     if ($LASTEXITCODE -ne 0) { throw "GranularFreezeRender failed with exit code $LASTEXITCODE" }
 
 The renderer writes exactly 14 non-empty stereo WAV files at 48 kHz and 24-bit:
@@ -199,6 +208,21 @@ quality and do not authorize a release. Open the WAVs in Ableton Live or Bitwig
 and complete the human listening gate before any tag, pricing, sales, or public
 release decision.
 
+## Package the candidate
+
+Use the repository scripts rather than manually zipping build directories:
+
+    bash ./scripts/package_mac.sh build build/Granular-Freeze-macOS.zip
+
+    pwsh -File ./scripts/package_win.ps1 -BuildDirectory build -OutputZip build/Granular-Freeze-Windows.zip
+
+The macOS script requires exactly one AU and one VST3, exact arm64 and x86_64
+slices, macOS 12.0 in every slice, valid ad-hoc signatures, required documents,
+and one clean archive root. The Windows script requires exactly one outer VST3
+bundle, its expected x86_64 binary, required documents, and one clean archive
+root. Both fail if an expected artifact is absent. These packages are not
+production signed or notarized.
+
 ## AU validation (macOS)
 
     cp -R "build/src/GranularFreeze_artefacts/Release/AU/Granular Freeze.component" \
@@ -206,25 +230,26 @@ release decision.
     killall -9 AudioComponentRegistrar
     auval -v aufx GF01 GFZP
 
-`aufx GF01 GFZP` comes from the plugin/manufacturer codes in
-`src/CMakeLists.txt`. auval renders at several sample rates and block sizes and
-exercises parameter automation, but it does not check that the effect sounds
-right — that still needs a DAW.
+`aufx GF01 GFZP` comes from the plugin and manufacturer codes in
+`src/CMakeLists.txt`. `auval` exercises loading and rendering, but it does not
+establish that the effect sounds right.
 
-## Testing in a host
+## DAW smoke test
 
-Copy the `.vst3` to the matching platform directory, rescan in your DAW,
-and load it.
+Install the exact extracted candidate assets, rescan in Ableton Live, Bitwig,
+or another host,
+and record the host version, OS version, format, sample rate, and block size.
+At minimum:
 
-macOS:
-
-    ~/Library/Audio/Plug-Ins/VST3/
-
-Windows:
-
-    C:\Program Files\Common Files\VST3\
-
-Worth checking by ear:
+- Load VST3; on macOS also load AU in a host that supports it.
+- Confirm dry pass-through before Freeze.
+- Toggle Freeze, mute the input, and confirm captured audio continues.
+- Move Pitch through 0.5x, 1.0x, and 2.0x and confirm playback rate responds.
+- Exercise short and long crossfade settings and repeated Freeze transitions.
+- Listen for clicks, dropouts, runaway level, denormals, or other glitches.
+- Save, close, and reopen the session to check parameter restoration.
+- Repeat representative checks at 44.1, 48, and 96 kHz and at small and large
+  block sizes.
 
 - Sample rates 44.1k / 48k / 96k and block sizes 64 / 256 / 1024.
 - Freeze within the first few seconds of loading, and after a long run — the
@@ -255,9 +280,15 @@ For the v0.2 human listening gate, also:
 
 No human DAW result exists yet. Do not infer compatibility, quality, CPU,
 release, or commercial claims from automated checks.
+Do not mark the candidate validated until this has been performed by ear. See
+`docs/RELEASE.md` for the complete release gate.
 
 ## Troubleshooting
 
 - **CMake too old**: JUCE 8 needs >= 3.22.
-- **Plugin does not appear**: rescan, and check the host's plugin scan log.
-- Signing and notarization are not automated. See `docs/CI_SECRETS.md`.
+- **Skip tests and render utility**: configure with
+  `-DGRANULAR_FREEZE_BUILD_TESTS=OFF`.
+- **Plugin does not appear**: rescan and check the host's plugin scan log.
+- **Signing warnings**: production signing and notarization are not implemented;
+  the macOS candidate is ad-hoc signed and Windows is unsigned. See
+  `docs/CI_SECRETS.md`.

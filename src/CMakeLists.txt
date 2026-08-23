@@ -5,20 +5,18 @@
 # This assumes JUCE is available and that juce_add_plugin is in scope (via JUCE's CMake setup)
 
 if(NOT TARGET juce::juce_audio_processors)
-  message(FATAL_ERROR "JUCE CMake not found. Add JUCE as a submodule or set JUCE_DIR and include JUCE's CMake files.")
+  message(FATAL_ERROR "JUCE CMake not found. Set GRANULAR_FREEZE_JUCE_SOURCE_DIR to a JUCE checkout, or allow the root FetchContent setup to provide it.")
 endif()
 
 juce_add_plugin(GranularFreeze
   VERSION ${PROJECT_VERSION}
+  BUNDLE_ID com.gabrielgarciaalonso.granularfreeze
   PLUGIN_MANUFACTURER_CODE GFZP
   PLUGIN_CODE GF01
   FORMATS VST3 AU
   PRODUCT_NAME "Granular Freeze"
   COMPANY_NAME "Gabriel Garcia Alonso"
 )
-
-# Sources use `#include <JuceHeader.h>`, which only exists if this is called.
-juce_generate_juce_header(GranularFreeze)
 
 # JUCE's VST3 wrapper refuses to compile until this is decided explicitly, since
 # it permanently fixes parameter IDs for released plugins. Note this is a module
@@ -42,4 +40,4 @@ target_sources(GranularFreeze PRIVATE
   PluginEditor.h
 )
 
-target_link_libraries(GranularFreeze PRIVATE juce::juce_audio_processors juce::juce_audio_utils)
+target_link_libraries(GranularFreeze PRIVATE juce::juce_audio_processors)

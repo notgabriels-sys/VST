@@ -1,7 +1,7 @@
 // Renders v0.2 listening cases through the plugin and reports objective
 // diagnostics. These WAVs are audition aids, not musical-quality gates.
 
-#include <JuceHeader.h>
+#include <juce_audio_formats/juce_audio_formats.h>
 #include "../src/PluginProcessor.h"
 
 #include <algorithm>

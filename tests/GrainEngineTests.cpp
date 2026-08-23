@@ -1,4 +1,3 @@
-#include <JuceHeader.h>
 #include "../src/GrainEngine.h"
 
 #include <algorithm>

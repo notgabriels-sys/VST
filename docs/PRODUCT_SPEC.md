@@ -52,6 +52,12 @@ GranularFreezeRender writes fourteen named 48 kHz/24-bit stereo WAVs. It fails
 on file/I/O or non-finite conditions; metrics are diagnostics, not quality
 gates.
 
+The repository also contains pinned macOS/Windows candidate workflows, strict
+platform packaging scripts, a sanitized bundle identifier, and checksum/draft
+release handling. These are engineering infrastructure, not evidence that the
+workflow has run for v0.2, that any candidate asset exists, or that a release
+has been approved.
+
 Before tag, pricing, sales, or release decisions, Gabriel must listen in
 Ableton Live or Bitwig: default texture, newest-window Position, Size/Density/
 Pitch ranges, transitions, stereo stability, and realistic CPU use. Remote
