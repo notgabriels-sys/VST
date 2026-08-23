@@ -6,6 +6,8 @@
 // the crossfade is free of discontinuities.
 
 #include <JuceHeader.h>
+#include "../src/PluginEditor.h"
+#include "../src/PluginParameters.h"
 #include "../src/PluginProcessor.h"
 
 #include <array>
@@ -31,6 +33,20 @@ void check (bool ok, const juce::String& name, const juce::String& detail = {})
         if (detail.isNotEmpty())
             std::printf ("      %s\n", detail.toRawUTF8());
     }
+}
+
+int countChildrenWithID (const juce::Component& parent, const juce::String& id)
+{
+    int count = 0;
+    for (int index = 0; index < parent.getNumChildComponents(); ++index)
+    {
+        const auto* child = parent.getChildComponent (index);
+        if (child->getComponentID() == id)
+            ++count;
+        count += countChildrenWithID (*child, id);
+    }
+
+    return count;
 }
 
 void setParam (GranularFreezeAudioProcessor& p, const juce::String& id, float value)
@@ -647,7 +663,126 @@ std::vector<float> renderPreparationBoundary (double requestedSampleRate,
 
 int main()
 {
+    juce::ScopedJuceInitialiser_GUI juceGui;
     std::printf ("GranularFreeze offline tests @ %.0f Hz / %d frames\n\n", kSampleRate, kBlockSize);
+
+    // ---------------------------------------------------------------- editor
+    // The editor is deliberately tested through the real APVTS attachments.
+    // Distinct values in both directions make swapped or absent attachments
+    // observable without relying on implementation details.
+    {
+        GranularFreezeAudioProcessor processor;
+        std::unique_ptr<juce::AudioProcessorEditor> editor (processor.createEditor());
+        check (editor != nullptr, "editor: processor creates an editor");
+
+        if (editor != nullptr)
+        {
+            check (editor->getWidth() == 480 && editor->getHeight() == 300,
+                   "editor: v0.2 size is 480 x 300");
+
+            struct SliderContract
+            {
+                const char* componentId;
+                const char* parameterId;
+                const char* suffix;
+                double uiToParameter;
+                float parameterToUi;
+            };
+
+            const SliderContract sliderContracts[] {
+                { "pitchControl",     gf::parameters::pitchId,        "x",     1.37, 1.71f },
+                { "positionControl",  gf::parameters::positionId,     "",      0.23, 0.67f },
+                { "sizeControl",      gf::parameters::grainSizeMsId,  " ms", 123.0, 177.0f },
+                { "densityControl",   gf::parameters::densityHzId,    " gr/s", 77.0, 143.0f },
+                { "crossfadeControl", gf::parameters::crossfadeMsId,  " ms", 321.0,  47.0f },
+            };
+
+            std::vector<juce::Component*> controls;
+            const char* controlIds[] {
+                "freezeControl", "pitchControl", "positionControl",
+                "sizeControl", "densityControl", "crossfadeControl"
+            };
+            for (const auto* id : controlIds)
+                check (countChildrenWithID (*editor, id) == 1,
+                       juce::String ("editor: ") + id + " is discoverable exactly once");
+
+            auto* freeze = editor->findChildWithID ("freezeControl");
+            check (freeze != nullptr, "editor: freezeControl exists");
+            check (dynamic_cast<juce::ToggleButton*> (freeze) != nullptr,
+                   "editor: freezeControl is a toggle button");
+            if (freeze != nullptr)
+                controls.push_back (freeze);
+
+            for (const auto& contract : sliderContracts)
+            {
+                auto* control = editor->findChildWithID (contract.componentId);
+                check (control != nullptr, juce::String ("editor: ") + contract.componentId + " exists");
+                check (dynamic_cast<juce::Slider*> (control) != nullptr,
+                       juce::String ("editor: ") + contract.componentId + " is a continuous slider");
+
+                if (auto* slider = dynamic_cast<juce::Slider*> (control))
+                {
+                    check (slider->getTextValueSuffix() == contract.suffix,
+                           juce::String ("editor: ") + contract.componentId + " has exact suffix");
+                    controls.push_back (slider);
+                }
+            }
+
+            for (auto* control : controls)
+            {
+                check (control->isVisible() && control->isEnabled()
+                       && ! control->getBounds().isEmpty(),
+                       "editor: " + control->getComponentID() + " is visible, enabled and laid out");
+                check (editor->getLocalBounds().contains (control->getBounds()),
+                       "editor: " + control->getComponentID() + " stays inside editor bounds");
+            }
+
+            for (size_t left = 0; left < controls.size(); ++left)
+                for (size_t right = left + 1; right < controls.size(); ++right)
+                    check (! controls[left]->getBounds().intersects (controls[right]->getBounds()),
+                           "editor: controls do not overlap");
+
+            auto* position = dynamic_cast<juce::Slider*> (editor->findChildWithID ("positionControl"));
+            check (position != nullptr && near ((float) position->getMinimum(), 0.0f)
+                   && near ((float) position->getMaximum(), 1.0f),
+                   "editor: position range remains normalized from 0.00 to 1.00");
+            check (position != nullptr && position->getTextFromValue (0.25) == "0.25",
+                   "editor: position text remains normalized rather than percent-scaled");
+
+            const auto drainGuiUpdates = []
+            {
+                juce::MessageManager::callSync ([] {});
+            };
+
+            auto* freezeButton = dynamic_cast<juce::ToggleButton*> (freeze);
+            setParam (processor, gf::parameters::freezeId, 1.0f);
+            drainGuiUpdates();
+            check (freezeButton != nullptr && freezeButton->getToggleState(),
+                   "editor: freeze attachment updates UI from freeze parameter");
+            if (freezeButton != nullptr)
+                freezeButton->setToggleState (false, juce::sendNotificationSync);
+            drainGuiUpdates();
+            check (near (rawParam (processor, gf::parameters::freezeId), 0.0f),
+                   "editor: freeze attachment updates freeze parameter from UI");
+
+            for (const auto& contract : sliderContracts)
+            {
+                auto* slider = dynamic_cast<juce::Slider*> (editor->findChildWithID (contract.componentId));
+                setParam (processor, contract.parameterId, contract.parameterToUi);
+                drainGuiUpdates();
+                check (slider != nullptr && near ((float) slider->getValue(), contract.parameterToUi),
+                       juce::String ("editor: ") + contract.componentId
+                           + " attachment updates UI from its intended parameter");
+
+                if (slider != nullptr)
+                    slider->setValue (contract.uiToParameter, juce::sendNotificationSync);
+                drainGuiUpdates();
+                check (near (rawParam (processor, contract.parameterId), (float) contract.uiToParameter),
+                       juce::String ("editor: ") + contract.componentId
+                           + " attachment updates its intended parameter from UI");
+            }
+        }
+    }
 
     // ---------------------------------------------------------------- 1
     // This is the host-visible contract. Reordering, changing a legacy range,

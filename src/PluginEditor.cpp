@@ -1,65 +1,100 @@
 #include "PluginEditor.h"
+#include "PluginParameters.h"
 
 GranularFreezeAudioProcessorEditor::GranularFreezeAudioProcessorEditor (GranularFreezeAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    // Freeze button
     addAndMakeVisible (freezeButton);
     freezeButton.setClickingTogglesState (true);
+    freezeButton.setComponentID ("freezeControl");
 
-    // Pitch slider
     addAndMakeVisible (pitchSlider);
+    pitchSlider.setSliderStyle (juce::Slider::LinearHorizontal);
     pitchSlider.setRange (0.5, 2.0, 0.01);
-    pitchSlider.setSkewFactorFromMidPoint (1.0); // better resolution around 1.0
+    pitchSlider.setSkewFactorFromMidPoint (1.0);
     pitchSlider.setTextValueSuffix ("x");
+    pitchSlider.setComponentID ("pitchControl");
     addAndMakeVisible (pitchLabel);
     pitchLabel.attachToComponent (&pitchSlider, true);
 
-    // Crossfade slider
+    addAndMakeVisible (positionSlider);
+    positionSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    positionSlider.setRange (0.0, 1.0, 0.01);
+    positionSlider.setNumDecimalPlacesToDisplay (2);
+    positionSlider.setComponentID ("positionControl");
+    addAndMakeVisible (positionLabel);
+    positionLabel.attachToComponent (&positionSlider, true);
+
+    addAndMakeVisible (grainSizeSlider);
+    grainSizeSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    grainSizeSlider.setRange (5.0, 200.0, 1.0);
+    grainSizeSlider.setTextValueSuffix (" ms");
+    grainSizeSlider.setComponentID ("sizeControl");
+    addAndMakeVisible (grainSizeLabel);
+    grainSizeLabel.attachToComponent (&grainSizeSlider, true);
+
+    addAndMakeVisible (densitySlider);
+    densitySlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    densitySlider.setRange (0.0, 200.0, 1.0);
+    densitySlider.setTextValueSuffix (" gr/s");
+    densitySlider.setComponentID ("densityControl");
+    addAndMakeVisible (densityLabel);
+    densityLabel.attachToComponent (&densitySlider, true);
+
     addAndMakeVisible (crossfadeSlider);
+    crossfadeSlider.setSliderStyle (juce::Slider::LinearHorizontal);
     crossfadeSlider.setRange (1.0, 500.0, 1.0);
     crossfadeSlider.setTextValueSuffix (" ms");
+    crossfadeSlider.setComponentID ("crossfadeControl");
     addAndMakeVisible (crossfadeLabel);
     crossfadeLabel.attachToComponent (&crossfadeSlider, true);
 
-    // Attach UI to parameters via APVTS
-    freezeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (audioProcessor.apvts, "freeze", freezeButton);
-    pitchAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "pitch", pitchSlider);
-    crossfadeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (audioProcessor.apvts, "crossfadeMs", crossfadeSlider);
+    freezeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+        audioProcessor.apvts, gf::parameters::freezeId, freezeButton);
+    pitchAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        audioProcessor.apvts, gf::parameters::pitchId, pitchSlider);
+    positionAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        audioProcessor.apvts, gf::parameters::positionId, positionSlider);
+    grainSizeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        audioProcessor.apvts, gf::parameters::grainSizeMsId, grainSizeSlider);
+    densityAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        audioProcessor.apvts, gf::parameters::densityHzId, densitySlider);
+    crossfadeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        audioProcessor.apvts, gf::parameters::crossfadeMsId, crossfadeSlider);
 
-    setSize (420, 160);
+    setSize (480, 300);
 }
 
-GranularFreezeAudioProcessorEditor::~GranularFreezeAudioProcessorEditor() {}
+GranularFreezeAudioProcessorEditor::~GranularFreezeAudioProcessorEditor() = default;
 
 void GranularFreezeAudioProcessorEditor::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colour::fromRGB (20, 20, 20));
     g.setColour (juce::Colours::white);
     g.setFont (15.0f);
-    g.drawFittedText ("Granular Freeze (prototype)", getLocalBounds().withTrimmedTop (4), juce::Justification::centredTop, 1);
+    g.drawFittedText ("Granular Freeze", getLocalBounds().reduced (12).withHeight (20),
+                      juce::Justification::centred, 1);
 }
 
 void GranularFreezeAudioProcessorEditor::resized()
 {
     auto area = getLocalBounds().reduced (12);
-    area.removeFromTop (20); // leave room for the title drawn in paint()
+    area.removeFromTop (20);
 
-    auto top = area.removeFromTop (36);
-    freezeButton.setBounds (top.removeFromLeft (120).reduced (6));
+    auto freezeRow = area.removeFromTop (38);
+    freezeButton.setBounds (freezeRow.removeFromLeft (140).reduced (3));
 
-    // Both labels are attachToComponent(..., onLeft = true), so each slider has
-    // to be indented or the label is drawn off the left edge.
-    const int labelWidth = 80;
+    constexpr int labelIndent = 92;
+    const auto layoutSliderRow = [&area] (juce::Slider& slider)
+    {
+        auto row = area.removeFromTop (42).reduced (0, 3);
+        row.removeFromLeft (labelIndent);
+        slider.setBounds (row);
+    };
 
-    auto pitchRow = area.removeFromTop (40).reduced (6);
-    pitchRow.removeFromLeft (labelWidth);
-    pitchSlider.setBounds (pitchRow);
-
-    // crossfadeSlider was created, made visible and attached to the parameter,
-    // but never given bounds -- so it rendered at zero size and the crossfade
-    // time could not be adjusted from the UI at all.
-    auto crossfadeRow = area.removeFromTop (40).reduced (6);
-    crossfadeRow.removeFromLeft (labelWidth);
-    crossfadeSlider.setBounds (crossfadeRow);
+    layoutSliderRow (pitchSlider);
+    layoutSliderRow (positionSlider);
+    layoutSliderRow (grainSizeSlider);
+    layoutSliderRow (densitySlider);
+    layoutSliderRow (crossfadeSlider);
 }
