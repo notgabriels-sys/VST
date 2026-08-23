@@ -57,6 +57,53 @@ Both defects found during the initial bring-up — freeze outputting silence, an
 a click at the loop point — were invisible to the compiler and to auval, and
 were caught here. Add a case when you change the DSP.
 
+## v0.2 listening renders
+
+`GranularFreezeRender` drives the processor offline and produces a fixed
+listening set. It is an artifact generator, not a CI quality threshold: it
+returns non-zero only for output-directory or WAV file I/O failure, or when a
+rendered sample or reported measurement is non-finite. Peak, RMS, DC,
+maximum adjacent-sample step, the approximate brightness proxy, and the
+maximum absolute L/R difference are diagnostics only.
+
+Build and render to a new output directory:
+
+    cmake --build build --config Release --target GranularFreezeRender --parallel
+    GRAIN_RENDER_DIR=$(mktemp -d /tmp/granular-freeze-v02-renders.XXXXXX)
+    "build/tests/GranularFreezeRender_artefacts/Release/GranularFreezeRender" "$GRAIN_RENDER_DIR"
+
+The renderer writes exactly 14 non-empty stereo WAV files at 48 kHz and 24-bit:
+
+- Size: `size-short` (10 ms), `size-long` (180 ms).
+- Density: `density-low` (5 Hz), `density-high` (120 Hz).
+- Position: `position-oldest` (0.0), `position-middle` (0.5),
+  `position-newest` (1.0).
+- Pitch: `pitch-down` (0.5x), `pitch-unity` (1.0x), `pitch-up` (2.0x).
+- Transition: `transition-short` (1 ms), `transition-normal` (30 ms),
+  `transition-long` (300 ms).
+- `dry-reference`, generated once with the canonical 80 ms / 20 Hz / newest /
+  unity / 30 ms configuration and Freeze off.
+
+Every v0.2 case sets all six APVTS parameters, captures live input with Freeze
+off, renders with Freeze on, then returns to live mode. Its reported metrics
+cover the settled frozen region beginning after two configured crossfade
+lengths; the dry reference metrics cover its complete render. The
+`brightness-Hz` field is an approximate zero-crossing-derived brightness proxy,
+not a spectral centroid.
+
+Audit the exact file contract after rendering:
+
+    for NAME in size-short size-long density-low density-high position-oldest position-middle position-newest pitch-down pitch-unity pitch-up transition-short transition-normal transition-long; do
+      test -s "$GRAIN_RENDER_DIR/$NAME.wav"
+    done
+    test -s "$GRAIN_RENDER_DIR/dry-reference.wav"
+    for WAV in "$GRAIN_RENDER_DIR"/*.wav; do afinfo "$WAV" | rg '2 ch, +48000 Hz, .*24-bit'; done
+
+Successful rendering, non-empty files, and finite metrics do not prove musical
+quality and do not authorize a release. Open the WAVs in Ableton Live or Bitwig
+and complete the human listening gate before any tag, pricing, sales, or public
+release decision.
+
 ## AU validation (macOS)
 
     cp -R "build/src/GranularFreeze_artefacts/Release/AU/Granular Freeze.component" \
