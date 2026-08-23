@@ -51,6 +51,7 @@ private:
     std::atomic<float>* freezeParameter = nullptr;
     std::atomic<float>* pitchParameter = nullptr;
     std::atomic<float>* crossfadeMsParameter = nullptr;
+    std::atomic<float>* holdMsParameter = nullptr;
     std::atomic<float>* grainSizeMsParameter = nullptr;
     std::atomic<float>* densityHzParameter = nullptr;
     std::atomic<float>* positionParameter = nullptr;
@@ -75,7 +76,7 @@ private:
     int transitionPosition = 0;
     bool transitionActive = false;
 
-    void snapshotFrozenView() noexcept;
+    void snapshotFrozenView (float holdMs) noexcept;
     void beginTransition (float targetMix, float crossfadeMs) noexcept;
     bool advanceTransition() noexcept;
     bool isFullyLive() const noexcept;

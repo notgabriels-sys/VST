@@ -41,6 +41,15 @@ GranularFreezeAudioProcessorEditor::GranularFreezeAudioProcessorEditor (Granular
     addAndMakeVisible (densityLabel);
     densityLabel.attachToComponent (&densitySlider, true);
 
+    addAndMakeVisible (holdSlider);
+    holdSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    holdSlider.setRange (50.0, 10000.0, 1.0);
+    holdSlider.setSkewFactor (0.4);
+    holdSlider.setTextValueSuffix (" ms");
+    holdSlider.setComponentID ("holdControl");
+    addAndMakeVisible (holdLabel);
+    holdLabel.attachToComponent (&holdSlider, true);
+
     addAndMakeVisible (crossfadeSlider);
     crossfadeSlider.setSliderStyle (juce::Slider::LinearHorizontal);
     crossfadeSlider.setRange (1.0, 500.0, 1.0);
@@ -59,10 +68,12 @@ GranularFreezeAudioProcessorEditor::GranularFreezeAudioProcessorEditor (Granular
         audioProcessor.apvts, gf::parameters::grainSizeMsId, grainSizeSlider);
     densityAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         audioProcessor.apvts, gf::parameters::densityHzId, densitySlider);
+    holdAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        audioProcessor.apvts, gf::parameters::holdMsId, holdSlider);
     crossfadeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         audioProcessor.apvts, gf::parameters::crossfadeMsId, crossfadeSlider);
 
-    setSize (480, 300);
+    setSize (480, 342);
 }
 
 GranularFreezeAudioProcessorEditor::~GranularFreezeAudioProcessorEditor() = default;
@@ -96,5 +107,6 @@ void GranularFreezeAudioProcessorEditor::resized()
     layoutSliderRow (positionSlider);
     layoutSliderRow (grainSizeSlider);
     layoutSliderRow (densitySlider);
+    layoutSliderRow (holdSlider);
     layoutSliderRow (crossfadeSlider);
 }

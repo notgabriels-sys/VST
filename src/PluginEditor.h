@@ -30,6 +30,9 @@ private:
     juce::Slider densitySlider;
     juce::Label densityLabel {"densityLabel", "Density"};
 
+    juce::Slider holdSlider;
+    juce::Label holdLabel {"holdLabel", "Hold"};
+
     juce::Slider crossfadeSlider;
     juce::Label crossfadeLabel {"crossfadeLabel", "Crossfade"};
 
@@ -39,6 +42,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> positionAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> grainSizeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> densityAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> holdAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> crossfadeAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GranularFreezeAudioProcessorEditor)

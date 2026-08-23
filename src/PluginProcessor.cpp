@@ -10,12 +10,12 @@ namespace
 {
 // Hosts can report corrupt or merely unrealistic preparation values. 384 kHz
 // covers a practical upper edge for audio production while bounding the
-// eight-second stereo capture allocation. Non-finite/non-positive rates fall
+// ten-second stereo capture allocation. Non-finite/non-positive rates fall
 // back to 44.1 kHz; larger finite rates clamp to this ceiling.
 constexpr double defaultSampleRate = 44100.0;
 constexpr double maximumSupportedSampleRate = 384000.0;
-constexpr double captureSeconds = 8.0;
-constexpr int defaultCaptureSamples = 352800;
+constexpr double captureSeconds = 10.0;
+constexpr int defaultCaptureSamples = 441000;
 
 // Host buffers larger than this are already processed in bounded chunks, so a
 // larger preparation hint must not enlarge audio-thread scratch storage.
@@ -74,6 +74,7 @@ bool isStableParameterId (const juce::String& id)
     return id == gf::parameters::freezeId
         || id == gf::parameters::pitchId
         || id == gf::parameters::crossfadeMsId
+        || id == gf::parameters::holdMsId
         || id == gf::parameters::grainSizeMsId
         || id == gf::parameters::densityHzId
         || id == gf::parameters::positionId;
@@ -125,6 +126,7 @@ GranularFreezeAudioProcessor::GranularFreezeAudioProcessor()
     freezeParameter = apvts.getRawParameterValue (gf::parameters::freezeId);
     pitchParameter = apvts.getRawParameterValue (gf::parameters::pitchId);
     crossfadeMsParameter = apvts.getRawParameterValue (gf::parameters::crossfadeMsId);
+    holdMsParameter = apvts.getRawParameterValue (gf::parameters::holdMsId);
     grainSizeMsParameter = apvts.getRawParameterValue (gf::parameters::grainSizeMsId);
     densityHzParameter = apvts.getRawParameterValue (gf::parameters::densityHzId);
     positionParameter = apvts.getRawParameterValue (gf::parameters::positionId);
@@ -179,13 +181,25 @@ bool GranularFreezeAudioProcessor::isBusesLayoutSupported (const BusesLayout& la
     return true;
 }
 
-void GranularFreezeAudioProcessor::snapshotFrozenView() noexcept
+void GranularFreezeAudioProcessor::snapshotFrozenView (float holdMs) noexcept
 {
+    if (validSamples <= 0)
+    {
+        frozenView = {};
+        return;
+    }
+
+    const int requestedHoldSamples = checkedRoundToPositiveInt (
+        (double) holdMs * 0.001 * currentSampleRate);
+    const int heldSamples = juce::jlimit (
+        1, validSamples, requestedHoldSamples);
+    const int heldStart = (writePosition - heldSamples + maxBufferSize)
+                        % maxBufferSize;
     frozenView = {
         &circularBuffer,
         maxBufferSize,
-        validSamples,
-        validSamples == maxBufferSize ? writePosition : 0
+        heldSamples,
+        heldStart
     };
 }
 
@@ -258,6 +272,9 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
     const float rawCrossfadeMs = crossfadeMsParameter != nullptr
         ? crossfadeMsParameter->load()
         : gf::parameters::crossfadeMsDefault;
+    const float rawHoldMs = holdMsParameter != nullptr
+        ? holdMsParameter->load()
+        : gf::parameters::holdMsDefault;
     const float rawGrainSizeMs = grainSizeMsParameter != nullptr
         ? grainSizeMsParameter->load()
         : gf::parameters::grainSizeMsDefault;
@@ -279,6 +296,9 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
     const float crossfadeMs = juce::jlimit (
         1.0f, 500.0f,
         finiteOr (rawCrossfadeMs, gf::parameters::crossfadeMsDefault));
+    const float holdMs = juce::jlimit (
+        50.0f, 10000.0f,
+        finiteOr (rawHoldMs, gf::parameters::holdMsDefault));
     const float grainSizeMs = juce::jlimit (
         5.0f, 200.0f,
         finiteOr (rawGrainSizeMs, gf::parameters::grainSizeMsDefault));
@@ -296,7 +316,7 @@ void GranularFreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
     {
         if (requestedFreeze && isFullyLive())
         {
-            snapshotFrozenView();
+            snapshotFrozenView (holdMs);
             grainEngine.reset();
         }
 

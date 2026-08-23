@@ -16,13 +16,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         juce::ParameterID { crossfadeMsId, 1 }, "Crossfade (ms)",
         juce::NormalisableRange<float> (1.0f, 500.0f, 1.0f), crossfadeMsDefault));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { grainSizeMsId, 2 }, "Size",
+        juce::ParameterID { holdMsId, 2 }, "Hold (ms)",
+        juce::NormalisableRange<float> (50.0f, 10000.0f, 1.0f, 0.4f), holdMsDefault));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { grainSizeMsId, 3 }, "Size",
         juce::NormalisableRange<float> (5.0f, 200.0f, 1.0f), grainSizeMsDefault));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { densityHzId, 2 }, "Density",
+        juce::ParameterID { densityHzId, 3 }, "Density",
         juce::NormalisableRange<float> (0.0f, 200.0f, 1.0f), densityHzDefault));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { positionId, 2 }, "Position",
+        juce::ParameterID { positionId, 3 }, "Position",
         juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), positionDefault));
 
     return layout;
@@ -56,6 +59,7 @@ void appendParameterDefault (juce::ValueTree& state, const char* parameterId, fl
 
 void addMissingV02Defaults (juce::ValueTree& state)
 {
+    appendParameterDefault (state, holdMsId, holdMsDefault);
     appendParameterDefault (state, grainSizeMsId, grainSizeMsDefault);
     appendParameterDefault (state, densityHzId, densityHzDefault);
     appendParameterDefault (state, positionId, positionDefault);

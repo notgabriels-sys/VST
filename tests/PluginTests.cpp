@@ -474,6 +474,7 @@ std::vector<float> renderParameterBehaviour (
     setParam (rig.proc, "freeze", 0.0f);
     setParam (rig.proc, "pitch", 1.0f);
     setParam (rig.proc, "crossfadeMs", 30.0f);
+    setParam (rig.proc, "holdMs", 1000.0f);
     setParam (rig.proc, "grainSizeMs", 80.0f);
     setParam (rig.proc, "densityHz", 20.0f);
     setParam (rig.proc, "position", 1.0f);
@@ -501,6 +502,11 @@ std::vector<float> renderParameterBehaviour (
     {
         minimum = 1.0f;
         maximum = 500.0f;
+    }
+    else if (juce::String (testedParameter) == "holdMs")
+    {
+        minimum = 50.0f;
+        maximum = 10000.0f;
     }
     else if (juce::String (testedParameter) == "grainSizeMs")
     {
@@ -585,6 +591,40 @@ std::array<std::vector<float>, 2> renderPositionSegments (float position)
 
     std::array<std::vector<float>, 2> output;
     rig.runConstant (1024, 0.0f, 0.0f, &output[0], &output[1]);
+    return output;
+}
+
+std::vector<float> renderHoldWindow (float holdMs)
+{
+    Rig rig (4000.0, 64);
+    setParam (rig.proc, "crossfadeMs", 1.0f);
+    setParam (rig.proc, "holdMs", holdMs);
+    setParam (rig.proc, "grainSizeMs", 20.0f);
+    setParam (rig.proc, "densityHz", 100.0f);
+    setParam (rig.proc, "position", 0.0f);
+    rig.runSegmented ({ { 800.0f, -0.75f, -0.75f },
+                        { 256.0f,  0.75f,  0.75f } });
+    setParam (rig.proc, "freeze", 1.0f);
+
+    std::vector<float> output;
+    rig.runConstant (1024, 0.0f, 0.0f, &output);
+    return output;
+}
+
+std::vector<float> renderMaximumHoldOldestEdge()
+{
+    Rig rig (1000.0, 64);
+    setParam (rig.proc, "crossfadeMs", 1.0f);
+    setParam (rig.proc, "holdMs", 10000.0f);
+    setParam (rig.proc, "grainSizeMs", 20.0f);
+    setParam (rig.proc, "densityHz", 100.0f);
+    setParam (rig.proc, "position", 0.0f);
+    rig.runSegmented ({ { 1000.0f, -0.75f, -0.75f },
+                        { 8500.0f,  0.75f,  0.75f } });
+    setParam (rig.proc, "freeze", 1.0f);
+
+    std::vector<float> output;
+    rig.runConstant (512, 0.0f, 0.0f, &output);
     return output;
 }
 
@@ -676,8 +716,8 @@ int main()
 
         if (editor != nullptr)
         {
-            check (editor->getWidth() == 480 && editor->getHeight() == 300,
-                   "editor: v0.2 size is 480 x 300");
+            check (editor->getWidth() == 480 && editor->getHeight() == 342,
+                   "editor: integrated v0.2 size is 480 x 342");
 
             struct SliderContract
             {
@@ -693,13 +733,15 @@ int main()
                 { "positionControl",  gf::parameters::positionId,     "",      0.23, 0.67f },
                 { "sizeControl",      gf::parameters::grainSizeMsId,  " ms", 123.0, 177.0f },
                 { "densityControl",   gf::parameters::densityHzId,    " gr/s", 77.0, 143.0f },
+                { "holdControl",      "holdMs",                       " ms", 1275.0, 6400.0f },
                 { "crossfadeControl", gf::parameters::crossfadeMsId,  " ms", 321.0,  47.0f },
             };
 
             std::vector<juce::Component*> controls;
             const char* controlIds[] {
                 "freezeControl", "pitchControl", "positionControl",
-                "sizeControl", "densityControl", "crossfadeControl"
+                "sizeControl", "densityControl", "holdControl",
+                "crossfadeControl"
             };
             for (const auto* id : controlIds)
                 check (countChildrenWithID (*editor, id) == 1,
@@ -795,17 +837,20 @@ int main()
             float maximum;
             float defaultValue;
             float interval;
+            float skew;
         };
 
         constexpr const char* expectedOrder[] {
-            "freeze", "pitch", "crossfadeMs", "grainSizeMs", "densityHz", "position"
+            "freeze", "pitch", "crossfadeMs", "holdMs",
+            "grainSizeMs", "densityHz", "position"
         };
         const ExpectedParameter expected[] {
-            { "pitch",        0.5f, 2.0f,   1.0f,  0.01f },
-            { "crossfadeMs",  1.0f, 500.0f, 30.0f, 1.0f },
-            { "grainSizeMs",  5.0f, 200.0f, 80.0f, 1.0f },
-            { "densityHz",    0.0f, 200.0f, 20.0f, 1.0f },
-            { "position",     0.0f, 1.0f,   1.0f,  0.01f },
+            { "pitch",        0.5f, 2.0f,     1.0f,    0.01f, 1.0f },
+            { "crossfadeMs",  1.0f, 500.0f,  30.0f,    1.0f,  1.0f },
+            { "holdMs",      50.0f, 10000.0f, 1000.0f, 1.0f,  0.4f },
+            { "grainSizeMs",  5.0f, 200.0f,   80.0f,   1.0f,  1.0f },
+            { "densityHz",    0.0f, 200.0f,   20.0f,   1.0f,  1.0f },
+            { "position",     0.0f, 1.0f,      1.0f,   0.01f, 1.0f },
         };
 
         GranularFreezeAudioProcessor processor;
@@ -813,7 +858,7 @@ int main()
         check (processor.apvts.state.getType().toString() == "PARAMS",
                "parameters: APVTS root is exactly PARAMS");
         check (parameters.size() == (int) std::size (expectedOrder),
-               "parameters: exactly six host parameters exist");
+               "parameters: exactly seven host parameters exist");
 
         for (int index = 0; index < parameters.size() && index < (int) std::size (expectedOrder); ++index)
         {
@@ -833,9 +878,10 @@ int main()
             { "freeze",       1, true  },
             { "pitch",        1, true  },
             { "crossfadeMs",  1, true  },
-            { "grainSizeMs",  2, false },
-            { "densityHz",    2, false },
-            { "position",     2, false },
+            { "holdMs",       2, true  },
+            { "grainSizeMs",  3, false },
+            { "densityHz",    3, false },
+            { "position",     3, false },
         };
 
         int maximumLegacyHint = 0;
@@ -897,8 +943,8 @@ int main()
                 {
                     const auto& range = floatParameter->range;
                     check (near (range.interval, item.interval), name + " step");
-                    check (near (range.skew, 1.0f) && ! range.symmetricSkew,
-                           name + " linear normalisation");
+                    check (near (range.skew, item.skew) && ! range.symmetricSkew,
+                           name + " exact normalisation skew");
                 }
             }
         }
@@ -906,18 +952,30 @@ int main()
 
     // ---------------------------------------------------------------- 2
     // A v0.1 state can contain future data and duplicated PARAM records. The
-    // migration is allowed to append only the three missing v0.2 records.
+    // migration appends Hold plus the three Grain Core defaults. A v0.1.2
+    // state already containing Hold must retain its exact value and only gain
+    // the three Grain Core records.
     {
         GranularFreezeAudioProcessor source;
         setParam (source, "freeze", 1.0f);
         setParam (source, "pitch", 1.11f);
         setParam (source, "crossfadeMs", 177.0f);
+        setParam (source, "holdMs", 2468.0f);
+        auto v012State = source.apvts.copyState();
+        for (int index = v012State.getNumChildren(); --index >= 0;)
+        {
+            const auto id = v012State.getChild (index).getProperty ("id").toString();
+            if (id == "grainSizeMs" || id == "densityHz" || id == "position")
+                v012State.removeChild (index, nullptr);
+        }
+
         auto v01State = source.apvts.copyState();
 
         for (int index = v01State.getNumChildren(); --index >= 0;)
         {
             const auto id = v01State.getChild (index).getProperty ("id").toString();
-            if (id == "grainSizeMs" || id == "densityHz" || id == "position")
+            if (id == "holdMs" || id == "grainSizeMs"
+                || id == "densityHz" || id == "position")
                 v01State.removeChild (index, nullptr);
         }
 
@@ -942,24 +1000,30 @@ int main()
             check (near (rawParam (processor, "freeze"), 1.0f), timing + ": preserves v0.1 freeze value");
             check (near (rawParam (processor, "pitch"), 1.73f), timing + ": last duplicate pitch remains active");
             check (near (rawParam (processor, "crossfadeMs"), 177.0f), timing + ": preserves v0.1 crossfade value");
+            const float restoredHold = rawParam (processor, "holdMs");
+            check (near (restoredHold, 1000.0f, 1.0e-3f),
+                   timing + ": missing Hold receives default",
+                   "raw Hold = " + juce::String (restoredHold, 9));
             check (near (rawParam (processor, "grainSizeMs"), 80.0f), timing + ": missing size receives default");
             check (near (rawParam (processor, "densityHz"), 20.0f), timing + ": missing density receives default");
             check (near (rawParam (processor, "position"), 1.0f), timing + ": missing position receives default");
             check (restored.getProperty ("futureProperty").toString() == "preserve-me",
                    timing + ": preserves unknown root property");
-            check (restored.getNumChildren() == v01State.getNumChildren() + 3,
-                   timing + ": appends exactly three missing PARAM children");
+            check (restored.getNumChildren() == v01State.getNumChildren() + 4,
+                   timing + ": appends exactly four missing PARAM children");
 
             for (int index = 0; index < v01State.getNumChildren() && index < restored.getNumChildren(); ++index)
                 check (sameTree (restored.getChild (index), v01State.getChild (index)),
                        timing + ": preserves child " + juce::String (index) + " byte-equivalently");
 
-            check (restored.getChild (v01State.getNumChildren()).getProperty ("id").toString() == "grainSizeMs",
-                   timing + ": appends size after existing children");
-            check (restored.getChild (v01State.getNumChildren() + 1).getProperty ("id").toString() == "densityHz",
-                   timing + ": appends density after existing children");
-            check (restored.getChild (v01State.getNumChildren() + 2).getProperty ("id").toString() == "position",
-                   timing + ": appends position after existing children");
+            check (restored.getChild (v01State.getNumChildren()).getProperty ("id").toString() == "holdMs",
+                   timing + ": appends Hold after existing children");
+            check (restored.getChild (v01State.getNumChildren() + 1).getProperty ("id").toString() == "grainSizeMs",
+                   timing + ": appends size after Hold");
+            check (restored.getChild (v01State.getNumChildren() + 2).getProperty ("id").toString() == "densityHz",
+                   timing + ": appends density after size");
+            check (restored.getChild (v01State.getNumChildren() + 3).getProperty ("id").toString() == "position",
+                   timing + ": appends position after density");
         };
 
         GranularFreezeAudioProcessor restoredBeforePrepare;
@@ -978,6 +1042,23 @@ int main()
         check (sameTree (beforePrepareMigratedState, afterPrepareMigratedState),
                "state timing: complete migrated state matches before and after prepareToPlay");
         processFiniteAudio (restoredAfterPrepare);
+
+        juce::MemoryBlock v012Binary;
+        copyStateToBinary (v012State, v012Binary);
+        GranularFreezeAudioProcessor restoredV012;
+        restoredV012.setStateInformation (v012Binary.getData(), (int) v012Binary.getSize());
+        const auto migratedV012 = restoredV012.apvts.copyState();
+        check (near (rawParam (restoredV012, "holdMs"), 2468.0f),
+               "state v0.1.2 migration: preserves existing Hold value");
+        check (migratedV012.getNumChildren() == v012State.getNumChildren() + 3,
+               "state v0.1.2 migration: appends exactly three Grain Core records");
+        for (int index = 0;
+             index < v012State.getNumChildren() && index < migratedV012.getNumChildren();
+             ++index)
+        {
+            check (sameTree (migratedV012.getChild (index), v012State.getChild (index)),
+                   "state v0.1.2 migration: preserves child " + juce::String (index));
+        }
 
         configureAndPrepare (restoredBeforePrepare);
         configureAndPrepare (restoredAfterPrepare);
@@ -1053,6 +1134,38 @@ int main()
                "state collision: later non-PARAM child retains exact type and properties");
         check (sameTree (afterSecondRealSizeCopy.getChild (realSizeCollisionIndex), realSizeCollisionExpected),
                "state collision: repeated copyState does not mutate later non-PARAM child");
+
+        GranularFreezeAudioProcessor holdSource;
+        auto noHoldParameterState = holdSource.apvts.copyState();
+        for (int index = noHoldParameterState.getNumChildren(); --index >= 0;)
+        {
+            if (noHoldParameterState.getChild (index).getProperty ("id").toString() == "holdMs")
+                noHoldParameterState.removeChild (index, nullptr);
+        }
+
+        juce::ValueTree holdCollision ("FUTURE_HOLD");
+        holdCollision.setProperty ("id", "holdMs", nullptr);
+        holdCollision.setProperty ("value", "13", nullptr);
+        holdCollision.setProperty ("futureMetadata", "keep-hold-collision", nullptr);
+        holdCollision.addChild (juce::ValueTree ("FUTURE_LEAF"), -1, nullptr);
+        const auto holdCollisionExpected = holdCollision.createCopy();
+        noHoldParameterState.addChild (holdCollision, -1, nullptr);
+        const auto holdCollisionIndex = noHoldParameterState.getNumChildren() - 1;
+
+        juce::MemoryBlock holdCollisionBinary;
+        copyStateToBinary (noHoldParameterState, holdCollisionBinary);
+        GranularFreezeAudioProcessor restoredMissingHold;
+        restoredMissingHold.setStateInformation (
+            holdCollisionBinary.getData(), (int) holdCollisionBinary.getSize());
+        const auto afterMissingHoldCopy = restoredMissingHold.apvts.copyState();
+        const float restoredHoldDefault = rawParam (restoredMissingHold, "holdMs");
+        check (near (restoredHoldDefault, 1000.0f, 1.0e-3f),
+               "state collision: absent PARAM Hold appends and restores the real default",
+               "raw Hold = " + juce::String (restoredHoldDefault, 9));
+        check (afterMissingHoldCopy.getChild (holdCollisionIndex).hasType ("FUTURE_HOLD")
+               && sameTree (afterMissingHoldCopy.getChild (holdCollisionIndex),
+                            holdCollisionExpected),
+               "state collision: non-PARAM Hold collision stays semantically identical");
     }
 
     // ---------------------------------------------------------------- 4
@@ -1063,6 +1176,7 @@ int main()
         setParam (source, "freeze", 1.0f);
         setParam (source, "pitch", 1.37f);
         setParam (source, "crossfadeMs", 311.0f);
+        setParam (source, "holdMs", 2468.0f);
         setParam (source, "grainSizeMs", 149.0f);
         setParam (source, "densityHz", 73.0f);
         setParam (source, "position", 0.42f);
@@ -1075,6 +1189,7 @@ int main()
         check (near (rawParam (restored, "freeze"), 1.0f), "state round-trip: freeze");
         check (near (rawParam (restored, "pitch"), 1.37f), "state round-trip: pitch");
         check (near (rawParam (restored, "crossfadeMs"), 311.0f), "state round-trip: crossfade");
+        check (near (rawParam (restored, "holdMs"), 2468.0f), "state round-trip: Hold");
         check (near (rawParam (restored, "grainSizeMs"), 149.0f), "state round-trip: size");
         check (near (rawParam (restored, "densityHz"), 73.0f), "state round-trip: density");
         check (near (rawParam (restored, "position"), 0.42f), "state round-trip: position");
@@ -1295,6 +1410,38 @@ int main()
         check (maxAbs (recentPosition[0], 256) > 0.10f
                && maxAbs (oldPosition[0], 256) > 0.10f,
                "processor: position controls render meaningful frozen signal");
+    }
+
+    // Hold selects the chronological window before Position chooses a point
+    // inside it. With Position at the oldest edge, a short Hold contains only
+    // the recent positive material while a longer Hold reaches the older
+    // negative segment.
+    {
+        const auto shortHold = renderHoldWindow (50.0f);
+        const auto longHold = renderHoldWindow (250.0f);
+        const float shortMean = mean (shortHold, 256);
+        const float longMean = mean (longHold, 256);
+        check (shortMean > 0.10f,
+               "processor: short Hold exposes only recent material",
+               "mean = " + juce::String (shortMean));
+        check (longMean < -0.10f,
+               "processor: long Hold reaches older material",
+               "mean = " + juce::String (longMean));
+        check (maxDifference (shortHold, longHold, 256) > 0.20f,
+               "processor: Hold changes the settled frozen signal");
+    }
+
+    // The maximum advertised Hold is ten seconds. At 9.5 seconds of captured
+    // history, Position zero must still reach the first second. An eight-second
+    // physical buffer has already discarded that negative segment.
+    {
+        const auto maximumHold = renderMaximumHoldOldestEdge();
+        const float oldestMean = mean (maximumHold, 128);
+        check (oldestMean < -0.10f,
+               "processor: ten-second Hold endpoint is physically available",
+               "oldest mean = " + juce::String (oldestMean));
+        check (maxAbs (maximumHold, 128) > 0.10f,
+               "processor: ten-second Hold endpoint renders meaningful signal");
     }
 
     // One GrainEngine timeline must read both channels. A scaled stereo source
@@ -1547,6 +1694,7 @@ int main()
             { "freeze",       0.0f, 1.0f,   -1.0f,   2.0f,   0.0f },
             { "pitch",        0.5f, 2.0f,    0.0f,   3.0f,   1.0f },
             { "crossfadeMs",  1.0f, 500.0f, 0.0f, 600.0f,  30.0f },
+            { "holdMs",      50.0f, 10000.0f, 0.0f, 12000.0f, 1000.0f },
             { "grainSizeMs",  5.0f, 200.0f, 0.0f, 250.0f,  80.0f },
             { "densityHz",    0.0f, 200.0f,-10.0f, 250.0f,  20.0f },
             { "position",     0.0f, 1.0f,   -1.0f,   2.0f,   1.0f },
