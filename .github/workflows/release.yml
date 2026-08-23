@@ -35,7 +35,7 @@ jobs:
             runner: windows-2022
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
           fetch-depth: 0
@@ -396,7 +396,7 @@ jobs:
           } > "build/signing-status-$PLATFORM.txt"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: granular-freeze-${{ matrix.platform }}
           path: |
@@ -437,7 +437,7 @@ jobs:
             }
 
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
