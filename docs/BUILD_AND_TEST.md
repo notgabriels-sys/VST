@@ -30,32 +30,56 @@ submodule in this repository, so `git submodule update` does nothing.
 
 ## Build
 
-macOS:
+### macOS (POSIX shell)
 
     cmake -S . -B build -G "Xcode"
     cmake --build build --config Release --parallel
 
-Windows (default Visual Studio generator):
+### Windows (PowerShell)
 
     cmake -S . -B build
+    if ($LASTEXITCODE -ne 0) { throw "CMake configure failed with exit code $LASTEXITCODE" }
     cmake --build build --config Release --parallel
+    if ($LASTEXITCODE -ne 0) { throw "Release build failed with exit code $LASTEXITCODE" }
 
 ## Artifacts
 
-    build/src/GranularFreeze_artefacts/Release/VST3/Granular Freeze.vst3
-    build/src/GranularFreeze_artefacts/Release/AU/Granular Freeze.component   # macOS only
+macOS:
 
-Note the space in the product name — quote these paths in shell commands.
+    build/src/GranularFreeze_artefacts/Release/VST3/Granular Freeze.vst3
+    build/src/GranularFreeze_artefacts/Release/AU/Granular Freeze.component
+
+Windows:
+
+    build\src\GranularFreeze_artefacts\Release\VST3\Granular Freeze.vst3
+
+The product name contains a space. Quote these paths in POSIX shells and use
+quoted strings with PowerShell's call operator where an executable path is
+invoked.
 
 ## Offline automated tests
 
 Both binaries need no host/device and print ALL TESTS PASSED (0 failures) when
-they pass:
+they pass.
+
+### macOS (POSIX shell)
 
     cmake --build build --config Release --target GranularFreezeEngineTests --parallel
     "build/tests/GranularFreezeEngineTests_artefacts/Release/GranularFreezeEngineTests"
     cmake --build build --config Release --target GranularFreezeTests --parallel
     "build/tests/GranularFreezeTests_artefacts/Release/GranularFreezeTests"
+
+### Windows (PowerShell)
+
+    cmake --build build --config Release --target GranularFreezeEngineTests --parallel
+    if ($LASTEXITCODE -ne 0) { throw "GranularFreezeEngineTests build failed with exit code $LASTEXITCODE" }
+    & ".\build\tests\GranularFreezeEngineTests_artefacts\Release\GranularFreezeEngineTests.exe"
+    if ($LASTEXITCODE -ne 0) { throw "GranularFreezeEngineTests failed with exit code $LASTEXITCODE" }
+
+    cmake --build build --config Release --target GranularFreezeTests --parallel
+    if ($LASTEXITCODE -ne 0) { throw "GranularFreezeTests build failed with exit code $LASTEXITCODE" }
+    & ".\build\tests\GranularFreezeTests_artefacts\Release\GranularFreezeTests.exe"
+    if ($LASTEXITCODE -ne 0) { throw "GranularFreezeTests failed with exit code $LASTEXITCODE" }
 
 GranularFreezeEngineTests covers chronological circular reads, empty/short
 capture, fixed 64 voices, Size/Hann behavior, Density scheduling,
@@ -95,11 +119,20 @@ rendered sample or reported measurement is non-finite. Peak, RMS, DC,
 maximum adjacent-sample step, the approximate brightness proxy, and the
 maximum absolute L/R difference are diagnostics only.
 
-Build and render to a new output directory:
+### Build and render on macOS (POSIX shell)
 
     cmake --build build --config Release --target GranularFreezeRender --parallel
     GRAIN_RENDER_DIR=$(mktemp -d /tmp/granular-freeze-v02-renders.XXXXXX)
     "build/tests/GranularFreezeRender_artefacts/Release/GranularFreezeRender" "$GRAIN_RENDER_DIR"
+
+### Build and render on Windows (PowerShell)
+
+    cmake --build build --config Release --target GranularFreezeRender --parallel
+    if ($LASTEXITCODE -ne 0) { throw "GranularFreezeRender build failed with exit code $LASTEXITCODE" }
+    $GrainRenderDir = Join-Path ([System.IO.Path]::GetTempPath()) ("granular-freeze-v02-renders-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $GrainRenderDir | Out-Null
+    & ".\build\tests\GranularFreezeRender_artefacts\Release\GranularFreezeRender.exe" $GrainRenderDir
+    if ($LASTEXITCODE -ne 0) { throw "GranularFreezeRender failed with exit code $LASTEXITCODE" }
 
 The renderer writes exactly 14 non-empty stereo WAV files at 48 kHz and 24-bit:
 
@@ -120,13 +153,46 @@ lengths; the dry reference metrics cover its complete render. The
 `brightness-Hz` field is an approximate zero-crossing-derived brightness proxy,
 not a spectral centroid.
 
-Audit the exact file contract after rendering:
+### Exact file and format audit on macOS (POSIX shell)
 
     for NAME in size-short size-long density-low density-high position-oldest position-middle position-newest pitch-down pitch-unity pitch-up transition-short transition-normal transition-long; do
       test -s "$GRAIN_RENDER_DIR/$NAME.wav"
     done
     test -s "$GRAIN_RENDER_DIR/dry-reference.wav"
     for WAV in "$GRAIN_RENDER_DIR"/*.wav; do afinfo "$WAV" | rg '2 ch, +48000 Hz, .*24-bit'; done
+
+### Exact non-empty file audit on Windows (PowerShell)
+
+Run this in the same PowerShell session so `$GrainRenderDir` still identifies the
+fresh renderer output:
+
+    $ExpectedNames = @(
+      "size-short", "size-long",
+      "density-low", "density-high",
+      "position-oldest", "position-middle", "position-newest",
+      "pitch-down", "pitch-unity", "pitch-up",
+      "transition-short", "transition-normal", "transition-long",
+      "dry-reference"
+    )
+    $WavFiles = @(Get-ChildItem -LiteralPath $GrainRenderDir -File -Filter "*.wav")
+    if ($WavFiles.Count -ne 14) {
+      throw "Expected exactly 14 WAV files, found $($WavFiles.Count)"
+    }
+    foreach ($Name in $ExpectedNames) {
+      $WavPath = Join-Path $GrainRenderDir "$Name.wav"
+      if (-not (Test-Path -LiteralPath $WavPath -PathType Leaf)) {
+        throw "Missing WAV: $WavPath"
+      }
+      if ((Get-Item -LiteralPath $WavPath).Length -le 0) {
+        throw "Empty WAV: $WavPath"
+      }
+    }
+
+`afinfo` is macOS-only, and this repository currently has no native
+cross-platform WAV inspector. The Windows audit therefore proves renderer exit
+success plus the exact fourteen-name/non-empty contract. The stereo 48 kHz /
+24-bit structural check is performed locally on macOS with `afinfo` unless
+an explicitly chosen independent Windows inspector is added later.
 
 Successful rendering, non-empty files, and finite metrics do not prove musical
 quality and do not authorize a release. Open the WAVs in Ableton Live or Bitwig
@@ -147,21 +213,33 @@ right — that still needs a DAW.
 
 ## Testing in a host
 
-Copy the `.vst3` to `~/Library/Audio/Plug-Ins/VST3/` (macOS) or
-`C:\Program Files\Common Files\VST3\` (Windows), rescan in your DAW, and load it.
+Copy the `.vst3` to the matching platform directory, rescan in your DAW,
+and load it.
+
+macOS:
+
+    ~/Library/Audio/Plug-Ins/VST3/
+
+Windows:
+
+    C:\Program Files\Common Files\VST3\
 
 Worth checking by ear:
 
 - Sample rates 44.1k / 48k / 96k and block sizes 64 / 256 / 1024.
 - Freeze within the first few seconds of loading, and after a long run — the
   captured region grows until it reaches the 8-second buffer.
-- Fast and slow freeze toggling, listening at the transition and at the loop
-  point.
+- Grain boundaries across short/long Size and low/high Density settings,
+  listening for clicks, impulses, or level discontinuities.
+- Short-capture wrapped reads, especially when Size and Pitch require more
+  source samples than have been captured.
+- Freeze and Unfreeze transition continuity, including fast toggles and
+  direction reversals before a transition finishes.
 - Pitch at the extremes (0.5x and 2.0x).
 
 Crossfade time is a parameter (`crossfadeMs`, 1-500 ms) with a slider in the
 UI; change it there rather than in code. Its default lives in
-`createParameterLayout()` in `src/PluginProcessor.cpp`.
+`gf::parameters::createLayout()` in `src/PluginParameters.cpp`.
 
 For the v0.2 human listening gate, also:
 
