@@ -7,17 +7,23 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     using APVTS = juce::AudioProcessorValueTreeState;
     APVTS::ParameterLayout layout;
 
-    layout.add (std::make_unique<juce::AudioParameterBool> (freezeId, "Freeze", freezeDefault));
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { freezeId, 1 }, "Freeze", freezeDefault));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
-        pitchId, "Pitch", juce::NormalisableRange<float> (0.5f, 2.0f, 0.01f), pitchDefault));
+        juce::ParameterID { pitchId, 1 }, "Pitch",
+        juce::NormalisableRange<float> (0.5f, 2.0f, 0.01f), pitchDefault));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
-        crossfadeMsId, "Crossfade (ms)", juce::NormalisableRange<float> (1.0f, 500.0f, 1.0f), crossfadeMsDefault));
+        juce::ParameterID { crossfadeMsId, 1 }, "Crossfade (ms)",
+        juce::NormalisableRange<float> (1.0f, 500.0f, 1.0f), crossfadeMsDefault));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
-        grainSizeMsId, "Size", juce::NormalisableRange<float> (5.0f, 200.0f, 1.0f), grainSizeMsDefault));
+        juce::ParameterID { grainSizeMsId, 2 }, "Size",
+        juce::NormalisableRange<float> (5.0f, 200.0f, 1.0f), grainSizeMsDefault));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
-        densityHzId, "Density", juce::NormalisableRange<float> (0.0f, 200.0f, 1.0f), densityHzDefault));
+        juce::ParameterID { densityHzId, 2 }, "Density",
+        juce::NormalisableRange<float> (0.0f, 200.0f, 1.0f), densityHzDefault));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
-        positionId, "Position", juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), positionDefault));
+        juce::ParameterID { positionId, 2 }, "Position",
+        juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), positionDefault));
 
     return layout;
 }

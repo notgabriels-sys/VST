@@ -4,6 +4,8 @@
 #include "GrainEngine.h"
 #include "PluginParameters.h"
 
+#include <limits>
+
 class GranularFreezeAudioProcessor  : public juce::AudioProcessor
 {
 public:
@@ -22,7 +24,10 @@ public:
 
     const juce::String getName() const override { return "GranularFreeze"; }
 
-    double getTailLengthSeconds() const override { return 0.0; }
+    double getTailLengthSeconds() const override
+    {
+        return std::numeric_limits<double>::infinity();
+    }
 
     // Required AudioProcessor overrides. This is an audio effect with no MIDI
     // and no program/preset support, so these are minimal implementations.

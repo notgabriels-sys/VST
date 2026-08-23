@@ -156,9 +156,12 @@ The renderer writes exactly 14 non-empty stereo WAV files at 48 kHz and 24-bit:
   unity / 30 ms configuration and Freeze off.
 
 Every v0.2 case sets all six APVTS parameters, captures live input with Freeze
-off, renders with Freeze on, then returns to live mode. Its reported metrics
-cover the settled frozen region beginning after two configured crossfade
-lengths; the dry reference metrics cover its complete render. The
+off, renders with Freeze on, then returns completely to live mode. The renderer
+derives the post-Unfreeze duration from the configured transition, adds one
+full 512-sample settled-live guard block, and verifies that final block against
+the corresponding dry input with a tight numerical tolerance. Its reported
+metrics cover the settled frozen region beginning after two configured
+crossfade lengths; the dry reference metrics cover its complete render. The
 `brightness-Hz` field is an approximate zero-crossing-derived brightness proxy,
 not a spectral centroid.
 

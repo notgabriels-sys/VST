@@ -93,6 +93,8 @@ struct Rendered
 {
     std::vector<float> left;
     std::vector<float> right;
+    std::vector<float> dryLeft;
+    std::vector<float> dryRight;
     size_t freezeOnAt = 0;
     size_t freezeOffAt = 0;
 };
@@ -110,6 +112,8 @@ void appendProcessedBlocks (GranularFreezeAudioProcessor& processor, Source& sou
             source.next (left, right);
             buffer.setSample (0, sample, left);
             buffer.setSample (1, sample, right);
+            output.dryLeft.push_back (left);
+            output.dryRight.push_back (right);
         }
 
         midi.clear();
@@ -141,7 +145,11 @@ Rendered renderCase (const Case& caseToRender)
     appendProcessedBlocks (processor, source, buffer, midi, 120, output);
     output.freezeOffAt = output.left.size();
     setParam (processor, "freeze", 0.0f);
-    appendProcessedBlocks (processor, source, buffer, midi, 20, output);
+    const int requiredTransitionSamples = static_cast<int> (std::ceil (
+        static_cast<double> (caseToRender.crossfadeMs) * 0.001 * sampleRate));
+    const int transitionBlocks = (requiredTransitionSamples + blockSize - 1) / blockSize;
+    const int postUnfreezeBlocks = transitionBlocks + 1;
+    appendProcessedBlocks (processor, source, buffer, midi, postUnfreezeBlocks, output);
 
     return output;
 }
@@ -259,6 +267,31 @@ bool allSamplesFinite (const Rendered& rendered)
     return true;
 }
 
+double maximumDryDifference (const Rendered& rendered, size_t start, size_t end)
+{
+    const auto size = rendered.left.size();
+    if (rendered.right.size() != size
+        || rendered.dryLeft.size() != size
+        || rendered.dryRight.size() != size
+        || start > end
+        || end > size)
+    {
+        return std::numeric_limits<double>::infinity();
+    }
+
+    double difference = 0.0;
+    for (size_t sample = start; sample < end; ++sample)
+    {
+        difference = std::max (
+            difference,
+            std::max (std::abs (static_cast<double> (rendered.left[sample])
+                                - static_cast<double> (rendered.dryLeft[sample])),
+                      std::abs (static_cast<double> (rendered.right[sample])
+                                - static_cast<double> (rendered.dryRight[sample]))));
+    }
+    return difference;
+}
+
 Measurements measure (const Rendered& rendered, MeasurementRange range)
 {
     Measurements measurements;
@@ -362,12 +395,51 @@ int main (int argc, char** argv)
     for (const auto& caseToRender : renderCases)
     {
         const auto rendered = renderCase (caseToRender);
+        const auto requiredTransitionSamples = static_cast<size_t> (std::ceil (
+            static_cast<double> (caseToRender.crossfadeMs) * 0.001 * sampleRate));
+        const auto renderedPostUnfreezeSamples = rendered.left.size() - rendered.freezeOffAt;
+        const auto minimumPostUnfreezeSamples = requiredTransitionSamples
+                                              + static_cast<size_t> (blockSize);
+        if (renderedPostUnfreezeSamples < minimumPostUnfreezeSamples)
+        {
+            std::fprintf (stderr,
+                          "%s: post-Unfreeze render has %zu samples; need at least %zu for the complete transition plus one full live guard block\n",
+                          caseToRender.name,
+                          renderedPostUnfreezeSamples,
+                          minimumPostUnfreezeSamples);
+            return 1;
+        }
+        if (juce::String (caseToRender.name) == "transition-long"
+            && renderedPostUnfreezeSamples < static_cast<size_t> (14400 + blockSize))
+        {
+            std::fprintf (stderr,
+                          "transition-long: expected at least 14,400 transition samples plus a 512-sample guard block\n");
+            return 1;
+        }
+
+        const auto guardStart = rendered.left.size() - static_cast<size_t> (blockSize);
+        const double guardDryDifference = maximumDryDifference (
+            rendered, guardStart, rendered.left.size());
+        constexpr double guardTolerance = 1.0e-7;
+        if (! std::isfinite (guardDryDifference) || guardDryDifference > guardTolerance)
+        {
+            std::fprintf (stderr,
+                          "%s: final live guard block differs from corresponding dry input by %.9g (tolerance %.1e)\n",
+                          caseToRender.name,
+                          guardDryDifference,
+                          guardTolerance);
+            return 1;
+        }
         const auto crossfadeSamples = static_cast<size_t> (std::llround (
             static_cast<double> (caseToRender.crossfadeMs) * 0.001 * sampleRate));
         const auto range = boundedRange (rendered, rendered.freezeOnAt + 2 * crossfadeSamples,
                                          rendered.freezeOffAt);
         const auto measurements = measure (rendered, range);
         printMeasurements (caseToRender.name, "settled-frozen", range, measurements);
+        std::printf ("%-20s lifecycle      post=%5zu guard-dry-max=%10.3e\n",
+                     caseToRender.name,
+                     renderedPostUnfreezeSamples,
+                     guardDryDifference);
 
         if (! measurements.finite)
         {

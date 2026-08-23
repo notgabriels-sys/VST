@@ -822,6 +822,46 @@ int main()
                    "parameters: exact host parameter order at " + juce::String (index));
         }
 
+        struct ExpectedVersionHint
+        {
+            const char* id;
+            int versionHint;
+            bool legacy;
+        };
+
+        constexpr ExpectedVersionHint expectedVersionHints[] {
+            { "freeze",       1, true  },
+            { "pitch",        1, true  },
+            { "crossfadeMs",  1, true  },
+            { "grainSizeMs",  2, false },
+            { "densityHz",    2, false },
+            { "position",     2, false },
+        };
+
+        int maximumLegacyHint = 0;
+        int minimumNewHint = std::numeric_limits<int>::max();
+        for (const auto& expectedHint : expectedVersionHints)
+        {
+            const auto* parameter = processor.apvts.getParameter (expectedHint.id);
+            const int actualHint = parameter != nullptr ? parameter->getVersionHint() : 0;
+            check (actualHint == expectedHint.versionHint,
+                   juce::String ("parameters: ") + expectedHint.id
+                       + " has exact AU version hint "
+                       + juce::String (expectedHint.versionHint),
+                   "actual hint = " + juce::String (actualHint));
+            check (actualHint > 0,
+                   juce::String ("parameters: ") + expectedHint.id
+                       + " AU version hint is nonzero");
+
+            if (expectedHint.legacy)
+                maximumLegacyHint = std::max (maximumLegacyHint, actualHint);
+            else
+                minimumNewHint = std::min (minimumNewHint, actualHint);
+        }
+        check (maximumLegacyHint < minimumNewHint,
+               "parameters: every legacy AU hint precedes every v0.2 hint",
+               juce::String (maximumLegacyHint) + " vs " + juce::String (minimumNewHint));
+
         auto* freeze = processor.apvts.getParameter ("freeze");
         check (freeze != nullptr, "parameters: freeze ID remains available");
         check (freeze != nullptr && near (freeze->getDefaultValue(), 0.0f),
@@ -1086,7 +1126,8 @@ int main()
 
     // ---------------------------------------------------------------- 3
     // Once frozen, silence at the input must NOT silence the output -- the
-    // buffer should keep playing back.
+    // buffer should keep playing back. The host-facing tail declaration must
+    // describe that same indefinite frozen-sustain behavior.
     {
         Rig r;
         setParam (r.proc, "freeze", 0.0f);
@@ -1099,6 +1140,10 @@ int main()
         const size_t tail = l.size() / 2;
         check (maxAbs (l, tail) > 0.3f, "frozen: holds audio when input goes silent",
                "max|L| after crossfade = " + juce::String (maxAbs (l, tail)));
+        const double declaredTail = r.proc.getTailLengthSeconds();
+        check (std::isinf (declaredTail) && declaredTail > 0.0,
+               "tail: meaningful frozen sustain reports positive infinity",
+               "reported seconds = " + juce::String (declaredTail));
     }
 
     // ---------------------------------------------------------------- 4
