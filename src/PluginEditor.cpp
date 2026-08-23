@@ -96,7 +96,7 @@ void GranularFreezeAudioProcessorEditor::resized()
     freezeButton.setBounds (freezeRow.removeFromLeft (140).reduced (3));
 
     constexpr int labelIndent = 92;
-    const auto layoutSliderRow = [&area] (juce::Slider& slider)
+    const auto layoutSliderRow = [&area, labelIndent] (juce::Slider& slider)
     {
         auto row = area.removeFromTop (42).reduced (0, 3);
         row.removeFromLeft (labelIndent);
