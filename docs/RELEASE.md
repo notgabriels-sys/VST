@@ -2,21 +2,21 @@
 
 ## Candidate identity
 
-The internal project version is `0.1.2`. The release workflow accepts newly
-created candidate tags matching `v0.1.2-rc.*`.
+The internal project version is `0.2.0`. The release workflow accepts newly
+created candidate tags matching `v0.2.0-rc.*`.
 
 Tags `v0.1.0` and `v0.1.1-rc.1` already exist and are immutable history. The
 older `v0.1.1-rc.1` tag points to commit `561aaf8`; its associated GitHub
 Release remains a private, unpublished draft candidate that predates Hold
-Length. Do not move, delete, reuse, or force-push either tag. A future candidate
-must use the next verified-unused `v0.1.2-rc.N` tag after all pre-tag gates
-pass.
+Length and the Grain Core. Do not move, delete, reuse, or force-push either
+tag. A future candidate must use the next verified-unused `v0.2.0-rc.N` tag
+after all pre-tag gates pass.
 
 ## What the workflow does
 
 `.github/workflows/release.yml` runs build/package validation for qualifying
 pull requests, manual dispatches, and newly created tag pushes matching
-`v0.1.2-rc.*`. Only a newly created matching tag push can run the draft-release
+`v0.2.0-rc.*`. Only a newly created matching tag push can run the draft-release
 job. A manual run with `sign_artifacts=true` must be dispatched from `main` and
 is artifact-only; it cannot create or mutate a release.
 
@@ -25,7 +25,8 @@ is artifact-only; it cannot create or mutate a release.
 2. Build on `macos-15-intel` and `windows-2022`, producing universal
    arm64+x86_64 AU/VST3 bundles for macOS 12 or newer and an x86-64 Windows
    VST3.
-3. Run the offline behavioral tests on both platforms.
+3. Run both offline behavioral suites on both platforms: the Grain Engine
+   contract and the complete processor/editor/state contract.
 4. For matching tag pushes, or an opted-in manual signing test, conditionally
    attempt Developer ID signing, Apple notarization/stapling, and Windows
    Authenticode signing. Complete secret sets are required for signed manual
@@ -52,12 +53,13 @@ public repository.
 
 ## Create an engineering candidate
 
-Do not recreate or move `v0.1.1-rc.1`. Before creating any `v0.1.2` candidate:
+Do not recreate or move `v0.1.1-rc.1`. Before creating any `v0.2.0` candidate:
 
 1. Confirm fresh macOS and Windows CI is green on the exact intended `main`
    commit.
-2. Complete exact-artifact AU/VST3 DAW validation, including Hold Length and
-   session restoration, and record the evidence.
+2. Complete exact-artifact AU/VST3 DAW validation for all seven controls,
+   Hold-window chronology, Grain Core behavior, transitions, and session
+   restoration, and record the evidence.
 3. Select and document one JUCE 8 distribution basis for the exact candidate.
 4. Configure all nine signing/notarization secret names without exposing their
    values.
@@ -65,8 +67,8 @@ Do not recreate or move `v0.1.1-rc.1`. Before creating any `v0.1.2` candidate:
    `sign_artifacts=true`.
 6. Require verified `mac_signed=yes`, `mac_notarized=yes`, and `win_signed=yes`
    results, then independently inspect the downloaded artifacts.
-7. Choose the next candidate name matching `v0.1.2-rc.*`, such as
-   `v0.1.2-rc.1`, only after confirming that no local tag, remote tag, or
+7. Choose the next candidate name matching `v0.2.0-rc.*`, such as
+   `v0.2.0-rc.1`, only after confirming that no local tag, remote tag, or
    GitHub release already uses it.
 8. Obtain a separate explicit approval to annotate the exact verified `main`
    commit and push only that new tag.
@@ -92,9 +94,11 @@ If a candidate is abandoned, document it and use a new tag.
 
 Recorded evidence: the exact older `v0.1.1-rc.1` private-draft AU and VST3
 assets passed authoritative AU validation and a limited Ableton Live 12.4.2
-functional smoke test at 48 kHz. That tag predates Hold Length. Current Hold
-behavior, session restoration, Bitwig, the full rate/block-size matrix, and
-subjective musical/sound-quality approval remain open.
+functional smoke test at 48 kHz. That tag predates Hold Length and the Grain
+Core. It is historical evidence only; the current v0.2.0 implementation still
+requires exact-artifact validation in every target format/host, session
+restoration, Bitwig checks, the full rate/block-size matrix, and subjective
+musical/sound-quality approval.
 
 ## JUCE distribution gate
 
@@ -123,9 +127,11 @@ complete:
 
 - Fresh native macOS and Windows CI for the exact release commit
 - Downloaded-asset checksum and archive-content verification
-- Exact VST3 and AU DAW loading and parameter-count checks
-- Freeze, Pitch, Crossfade, and short/default/long Hold behavior
-- Session restoration and automation checks, including the Hold parameter
+- Exact VST3 and AU DAW loading and seven-parameter count/order checks
+- Freeze, Pitch, Crossfade, short/default/long Hold, Size, Density, and
+  chronological Position behavior
+- Session restoration and automation checks, including v0.1 and v0.1.2 state
+  migration into v0.2.0
 - Listening checks without unresolved clicks, dropouts, runaway levels, or
   other glitches
 - Owner-controlled subjective musical/sound-quality approval
@@ -150,6 +156,6 @@ Do not add or log Gumroad credentials for an engineering candidate.
 - Missing release assets: inspect the strict packaging and artifact-download
   steps. Product paths contain spaces and must remain quoted.
 - No draft release: confirm the pushed tag is newly created, matches
-  `v0.1.2-rc.*`, points to a commit contained in `main`, has no existing
+  `v0.2.0-rc.*`, points to a commit contained in `main`, has no existing
   release object, and that both matrix jobs plus signing-status composition
   succeeded.

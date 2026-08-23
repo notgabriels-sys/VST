@@ -49,13 +49,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test_binary=$(find build -type f \( -name 'GranularFreezeTests' -o -name 'GranularFreezeTests.exe' \) -print -quit)
-          if [ -z "$test_binary" ]; then
-            echo "GranularFreezeTests binary not found under build/" >&2
-            exit 1
-          fi
-          echo "running $test_binary"
-          "$test_binary"
+          for name in GranularFreezeEngineTests GranularFreezeTests; do
+            test_binary=$(find build -type f \( -name "$name" -o -name "$name.exe" \) -print -quit)
+            if [ -z "$test_binary" ]; then
+              echo "$name binary not found under build/" >&2
+              exit 1
+            fi
+            echo "running $test_binary"
+            "$test_binary"
+          done
 
       - name: Package macOS bundles
         if: matrix.platform == 'macos'

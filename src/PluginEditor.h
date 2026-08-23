@@ -17,20 +17,33 @@ private:
 
     // UI controls
     juce::ToggleButton freezeButton {"Freeze"};
+
     juce::Slider pitchSlider;
     juce::Label pitchLabel {"pitchLabel", "Pitch"};
 
-    juce::Slider crossfadeSlider;
-    juce::Label crossfadeLabel {"crossfadeLabel", "Crossfade"};
+    juce::Slider positionSlider;
+    juce::Label positionLabel {"positionLabel", "Position"};
+
+    juce::Slider grainSizeSlider;
+    juce::Label grainSizeLabel {"grainSizeLabel", "Size"};
+
+    juce::Slider densitySlider;
+    juce::Label densityLabel {"densityLabel", "Density"};
 
     juce::Slider holdSlider;
     juce::Label holdLabel {"holdLabel", "Hold"};
 
-    // APVTS attachments
+    juce::Slider crossfadeSlider;
+    juce::Label crossfadeLabel {"crossfadeLabel", "Crossfade"};
+
+    // Attachments are declared after their controls so they are destroyed first.
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> freezeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> pitchAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> crossfadeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> positionAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> grainSizeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> densityAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> holdAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> crossfadeAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GranularFreezeAudioProcessorEditor)
 };

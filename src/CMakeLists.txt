@@ -30,6 +30,10 @@ juce_add_plugin(GranularFreeze
 target_compile_definitions(GranularFreeze PUBLIC JUCE_VST3_CAN_REPLACE_VST2=0)
 
 target_sources(GranularFreeze PRIVATE
+  GrainEngine.cpp
+  GrainEngine.h
+  PluginParameters.cpp
+  PluginParameters.h
   PluginProcessor.cpp
   PluginProcessor.h
   PluginEditor.cpp

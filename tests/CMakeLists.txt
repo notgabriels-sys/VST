@@ -6,6 +6,11 @@ target_link_libraries(GranularFreezeTests PRIVATE
   "$<LINK_ONLY:GranularFreeze>"
   juce::juce_audio_processors)
 
+add_executable(GranularFreezeEngineTests GrainEngineTests.cpp)
+target_link_libraries(GranularFreezeEngineTests PRIVATE
+  "$<LINK_ONLY:GranularFreeze>"
+  juce::juce_audio_processors)
+
 # Renders demo audio + objective measurements. Not run in CI; a listening aid.
 add_executable(GranularFreezeRender RenderDemo.cpp)
 target_link_libraries(GranularFreezeRender PRIVATE

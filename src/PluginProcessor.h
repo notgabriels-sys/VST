@@ -1,8 +1,11 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "GrainEngine.h"
+#include "PluginParameters.h"
 
-// A compact prototype: circular buffer with a freeze toggle and coarse pitch control.
+#include <limits>
+
 class GranularFreezeAudioProcessor  : public juce::AudioProcessor
 {
 public:
@@ -21,7 +24,10 @@ public:
 
     const juce::String getName() const override { return "GranularFreeze"; }
 
-    double getTailLengthSeconds() const override { return 0.0; }
+    double getTailLengthSeconds() const override
+    {
+        return std::numeric_limits<double>::infinity();
+    }
 
     // Required AudioProcessor overrides. This is an audio effect with no MIDI
     // and no program/preset support, so these are minimal implementations.
@@ -42,34 +48,38 @@ public:
     juce::AudioProcessorValueTreeState apvts;
 
 private:
-    // Note: parameters are exposed through `apvts`; legacy raw pointers removed.
+    std::atomic<float>* freezeParameter = nullptr;
+    std::atomic<float>* pitchParameter = nullptr;
+    std::atomic<float>* crossfadeMsParameter = nullptr;
+    std::atomic<float>* holdMsParameter = nullptr;
+    std::atomic<float>* grainSizeMsParameter = nullptr;
+    std::atomic<float>* densityHzParameter = nullptr;
+    std::atomic<float>* positionParameter = nullptr;
 
-    // Circular buffer for live capture and freeze playback
+    // Circular buffer for chronological live capture.
     juce::AudioBuffer<float> circularBuffer;
-    int writePosition = 0;    // where incoming audio is written
-    double readPosition = 0.0; // fractional read head for playback when frozen
+    juce::AudioBuffer<float> wetScratch;
+    gf::GrainEngine grainEngine;
+    gf::FrozenBufferView frozenView;
+
+    int writePosition = 0;
     double currentSampleRate = 44100.0;
-    int maxBufferSize = 0; // samples (depends on configured seconds)
-    // How much of circularBuffer actually holds captured audio. Until the
-    // buffer has filled once this is less than maxBufferSize, and frozen
-    // playback must wrap within it -- otherwise the read head runs through the
-    // still-zeroed remainder and freeze outputs silence.
+    int maxBufferSize = 1;
     int validSamples = 0;
+    int preparedBlockSize = 1;
 
-    // The slice of circularBuffer that freeze holds and loops: holdLength
-    // samples beginning at buffer index holdStart. Fixed when freeze engages,
-    // so the held audio is the most RECENT holdMs rather than the whole
-    // capture read from its oldest sample.
-    int holdStart = 0;
-    int holdLength = 0;
+    bool freezeTarget = false;
+    float wetMix = 0.0f;
+    float transitionStartMix = 0.0f;
+    float transitionTargetMix = 0.0f;
+    int transitionLength = 0;
+    int transitionPosition = 0;
+    bool transitionActive = false;
 
-    // Crossfade smoothing when toggling freeze (in samples)
-    int crossfadeSamples = 0;
-    int crossfadePos = 0; // counts down
-    enum CrossfadeDir { None = 0, ToFrozen = 1, ToLive = 2 };
-    CrossfadeDir crossfadeDir = None;
-    bool freezeWriting = true; // when false, incoming audio is not written to circular buffer
-    bool prevFreezeState = false;
+    void snapshotFrozenView (float holdMs) noexcept;
+    void beginTransition (float targetMix, float crossfadeMs) noexcept;
+    bool advanceTransition() noexcept;
+    bool isFullyLive() const noexcept;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GranularFreezeAudioProcessor)
 };

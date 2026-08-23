@@ -1,247 +1,463 @@
-// Renders demo audio through the plugin and reports objective measurements.
-//
-// The offline test suite answers yes/no questions. This produces actual audio
-// files to listen to, plus numbers that describe what the freeze is doing:
-// loop-seam continuity, DC offset, peak/RMS, and spectral centroid drift.
+// Renders v0.2 listening cases through the plugin and reports objective
+// diagnostics. These WAVs are audition aids, not musical-quality gates.
 
 #include <juce_audio_formats/juce_audio_formats.h>
 #include "../src/PluginProcessor.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <limits>
+#include <memory>
 #include <vector>
 
 namespace
 {
-constexpr double SR = 48000.0;
-constexpr int    BS = 512;
+constexpr double sampleRate = 48000.0;
+constexpr int blockSize = 512;
 
-void setParam (GranularFreezeAudioProcessor& p, const juce::String& id, float v)
+struct Case
 {
-    if (auto* q = p.apvts.getParameter (id)) q->setValueNotifyingHost (q->convertTo0to1 (v));
+    const char* name;
+    float grainSizeMs;
+    float densityHz;
+    float position;
+    float pitch;
+    float holdMs;
+    float crossfadeMs;
+};
+
+constexpr Case renderCases[] {
+    { "size-short",        10.0f,  20.0f, 1.0f, 1.0f, 1000.0f,  30.0f },
+    { "size-long",        180.0f,  20.0f, 1.0f, 1.0f, 1000.0f,  30.0f },
+    { "density-low",       80.0f,   5.0f, 1.0f, 1.0f, 1000.0f,  30.0f },
+    { "density-high",      80.0f, 120.0f, 1.0f, 1.0f, 1000.0f,  30.0f },
+    { "position-oldest",   80.0f,  20.0f, 0.0f, 1.0f, 1000.0f,  30.0f },
+    { "position-middle",   80.0f,  20.0f, 0.5f, 1.0f, 1000.0f,  30.0f },
+    { "position-newest",   80.0f,  20.0f, 1.0f, 1.0f, 1000.0f,  30.0f },
+    { "hold-short",        80.0f,  20.0f, 0.0f, 1.0f,   80.0f,  30.0f },
+    { "hold-long",         80.0f,  20.0f, 0.0f, 1.0f,  400.0f,  30.0f },
+    { "pitch-down",        80.0f,  20.0f, 1.0f, 0.5f, 1000.0f,  30.0f },
+    { "pitch-unity",       80.0f,  20.0f, 1.0f, 1.0f, 1000.0f,  30.0f },
+    { "pitch-up",          80.0f,  20.0f, 1.0f, 2.0f, 1000.0f,  30.0f },
+    { "transition-short",  80.0f,  20.0f, 1.0f, 1.0f, 1000.0f,   1.0f },
+    { "transition-normal", 80.0f,  20.0f, 1.0f, 1.0f, 1000.0f,  30.0f },
+    { "transition-long",   80.0f,  20.0f, 1.0f, 1.0f, 1000.0f, 300.0f },
+};
+
+constexpr Case dryReferenceCase {
+    "dry-reference", 80.0f, 20.0f, 1.0f, 1.0f, 1000.0f, 30.0f
+};
+
+void setParam (GranularFreezeAudioProcessor& processor, const juce::String& id, float value)
+{
+    if (auto* parameter = processor.apvts.getParameter (id))
+        parameter->setValueNotifyingHost (parameter->convertTo0to1 (value));
+    else
+        jassertfalse;
 }
 
-// A detuned saw chord through a gentle lowpass -- harmonically rich, so freeze
-// artefacts and loop seams are audible rather than hidden by a pure tone.
+void configure (GranularFreezeAudioProcessor& processor, const Case& renderCase, float freeze)
+{
+    setParam (processor, "freeze", freeze);
+    setParam (processor, "pitch", renderCase.pitch);
+    setParam (processor, "crossfadeMs", renderCase.crossfadeMs);
+    setParam (processor, "holdMs", renderCase.holdMs);
+    setParam (processor, "grainSizeMs", renderCase.grainSizeMs);
+    setParam (processor, "densityHz", renderCase.densityHz);
+    setParam (processor, "position", renderCase.position);
+}
+
+// A detuned saw chord through a gentle lowpass is harmonically rich, so grain
+// differences are audible rather than hidden by a pure-tone source.
 struct Source
 {
-    double ph[6] {};
-    double lp[2] {};
-    const double freqs[6] { 110.0, 110.6, 164.81, 165.4, 220.0, 277.18 };
+    double phases[6] {};
+    double lowPass[2] {};
+    const double frequencies[6] { 110.0, 110.6, 164.81, 165.4, 220.0, 277.18 };
 
-    double elapsed = 0.0;
-
-    void next (float& l, float& r)
+    void next (float& left, float& right)
     {
-        // Step the whole chord up two semitones every second. Without a source
-        // that changes over time, every hold length would hold the same chord
-        // and the parameter would be inaudible.
-        elapsed += 1.0 / SR;
-        const int step = (int) std::floor (elapsed);
-        const double transpose = std::pow (2.0, (step * 2) / 12.0);
-
         double sum = 0.0;
-        for (int i = 0; i < 6; ++i)
+        for (int index = 0; index < 6; ++index)
         {
-            ph[i] += (freqs[i] * transpose) / SR;
-            if (ph[i] >= 1.0) ph[i] -= 1.0;
-            sum += (2.0 * ph[i] - 1.0) * 0.16;          // saw
+            phases[index] += frequencies[index] / sampleRate;
+            if (phases[index] >= 1.0)
+                phases[index] -= 1.0;
+
+            sum += (2.0 * phases[index] - 1.0) * 0.16;
         }
-        lp[0] += 0.28 * (sum - lp[0]);                   // one-pole LP
-        lp[1] += 0.28 * (lp[0] - lp[1]);
-        l = (float) (lp[1] * 0.9);
-        r = (float) (lp[1] * 0.9);
+
+        lowPass[0] += 0.28 * (sum - lowPass[0]);
+        lowPass[1] += 0.28 * (lowPass[0] - lowPass[1]);
+        left = static_cast<float> (lowPass[1] * 0.9);
+        right = left;
     }
 };
 
 struct Rendered
 {
-    std::vector<float> l, r;
-    std::vector<int> freezeOnAt, freezeOffAt;
+    std::vector<float> left;
+    std::vector<float> right;
+    std::vector<float> dryLeft;
+    std::vector<float> dryRight;
+    size_t freezeOnAt = 0;
+    size_t freezeOffAt = 0;
 };
 
-Rendered render (const juce::String& label, float pitch, float crossfadeMs, float holdMs,
-                 int preBlocks, int frozenBlocks, int postBlocks)
+void appendProcessedBlocks (GranularFreezeAudioProcessor& processor, Source& source,
+                            juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi,
+                            int numberOfBlocks, Rendered& output)
 {
-    GranularFreezeAudioProcessor p;
-    p.setPlayConfigDetails (2, 2, SR, BS);
-    p.prepareToPlay (SR, BS);
-    setParam (p, "pitch", pitch);
-    setParam (p, "crossfadeMs", crossfadeMs);
-    setParam (p, "holdMs", holdMs);
-    setParam (p, "freeze", 0.0f);
-
-    juce::AudioBuffer<float> buf (2, BS);
-    juce::MidiBuffer midi;
-    Source src;
-    Rendered out;
-
-    auto runBlocks = [&] (int n, bool silentIn)
+    for (int block = 0; block < numberOfBlocks; ++block)
     {
-        for (int b = 0; b < n; ++b)
+        for (int sample = 0; sample < blockSize; ++sample)
         {
-            for (int i = 0; i < BS; ++i)
-            {
-                float l = 0.0f, r = 0.0f;
-                if (! silentIn) src.next (l, r);
-                buf.setSample (0, i, l);
-                buf.setSample (1, i, r);
-            }
-            midi.clear();
-            p.processBlock (buf, midi);
-            for (int i = 0; i < BS; ++i)
-            {
-                out.l.push_back (buf.getSample (0, i));
-                out.r.push_back (buf.getSample (1, i));
-            }
+            float left = 0.0f;
+            float right = 0.0f;
+            source.next (left, right);
+            buffer.setSample (0, sample, left);
+            buffer.setSample (1, sample, right);
+            output.dryLeft.push_back (left);
+            output.dryRight.push_back (right);
         }
-    };
 
-    runBlocks (preBlocks, false);
-    out.freezeOnAt.push_back ((int) out.l.size());
-    setParam (p, "freeze", 1.0f);
-    runBlocks (frozenBlocks, false);          // source keeps running underneath
-    out.freezeOffAt.push_back ((int) out.l.size());
-    setParam (p, "freeze", 0.0f);
-    runBlocks (postBlocks, false);
+        midi.clear();
+        processor.processBlock (buffer, midi);
 
-    juce::ignoreUnused (label);
-    return out;
-}
-
-void writeWav (const juce::File& f, const Rendered& r)
-{
-    juce::AudioBuffer<float> b (2, (int) r.l.size());
-    for (int i = 0; i < (int) r.l.size(); ++i)
-    {
-        b.setSample (0, i, r.l[(size_t) i]);
-        b.setSample (1, i, r.r[(size_t) i]);
-    }
-    f.deleteFile();
-    juce::WavAudioFormat fmt;
-    if (auto* os = f.createOutputStream().release())
-    {
-        std::unique_ptr<juce::AudioFormatWriter> w (fmt.createWriterFor (os, SR, 2, 24, {}, 0));
-        if (w != nullptr) w->writeFromAudioSampleBuffer (b, 0, b.getNumSamples());
+        for (int sample = 0; sample < blockSize; ++sample)
+        {
+            output.left.push_back (buffer.getSample (0, sample));
+            output.right.push_back (buffer.getSample (1, sample));
+        }
     }
 }
 
-double rms (const std::vector<float>& v, size_t a, size_t b)
+Rendered renderCase (const Case& caseToRender)
 {
-    double s = 0; size_t n = 0;
-    for (size_t i = a; i < std::min (b, v.size()); ++i) { s += (double) v[i] * v[i]; ++n; }
-    return n ? std::sqrt (s / (double) n) : 0.0;
+    GranularFreezeAudioProcessor processor;
+    processor.setPlayConfigDetails (2, 2, sampleRate, blockSize);
+    processor.prepareToPlay (sampleRate, blockSize);
+    configure (processor, caseToRender, 0.0f);
+
+    juce::AudioBuffer<float> buffer (2, blockSize);
+    juce::MidiBuffer midi;
+    Source source;
+    Rendered output;
+
+    appendProcessedBlocks (processor, source, buffer, midi, 40, output);
+    output.freezeOnAt = output.left.size();
+    setParam (processor, "freeze", 1.0f);
+    appendProcessedBlocks (processor, source, buffer, midi, 120, output);
+    output.freezeOffAt = output.left.size();
+    setParam (processor, "freeze", 0.0f);
+    const int requiredTransitionSamples = static_cast<int> (std::ceil (
+        static_cast<double> (caseToRender.crossfadeMs) * 0.001 * sampleRate));
+    const int transitionBlocks = (requiredTransitionSamples + blockSize - 1) / blockSize;
+    const int postUnfreezeBlocks = transitionBlocks + 1;
+    appendProcessedBlocks (processor, source, buffer, midi, postUnfreezeBlocks, output);
+
+    return output;
 }
-double peak (const std::vector<float>& v, size_t a, size_t b)
+
+Rendered renderDryReference()
 {
-    double m = 0;
-    for (size_t i = a; i < std::min (b, v.size()); ++i) m = std::max (m, (double) std::abs (v[i]));
-    return m;
+    GranularFreezeAudioProcessor processor;
+    processor.setPlayConfigDetails (2, 2, sampleRate, blockSize);
+    processor.prepareToPlay (sampleRate, blockSize);
+    configure (processor, dryReferenceCase, 0.0f);
+
+    juce::AudioBuffer<float> buffer (2, blockSize);
+    juce::MidiBuffer midi;
+    Source source;
+    Rendered output;
+    appendProcessedBlocks (processor, source, buffer, midi, 180, output);
+    output.freezeOnAt = output.left.size();
+    output.freezeOffAt = output.left.size();
+    return output;
 }
-double dc (const std::vector<float>& v, size_t a, size_t b)
+
+bool writeWav (const juce::File& file, const Rendered& rendered)
 {
-    double s = 0; size_t n = 0;
-    for (size_t i = a; i < std::min (b, v.size()); ++i) { s += v[i]; ++n; }
-    return n ? s / (double) n : 0.0;
+    if (rendered.left.size() != rendered.right.size()
+        || rendered.left.empty()
+        || rendered.left.size() > static_cast<size_t> (std::numeric_limits<int>::max()))
+    {
+        std::fprintf (stderr, "cannot write %s: invalid stereo render size\n", file.getFullPathName().toRawUTF8());
+        return false;
+    }
+
+    if (file.exists() && ! file.deleteFile())
+    {
+        std::fprintf (stderr, "cannot replace %s: delete failed\n", file.getFullPathName().toRawUTF8());
+        return false;
+    }
+
+    std::unique_ptr<juce::OutputStream> outputStream = file.createOutputStream();
+    if (outputStream == nullptr)
+    {
+        std::fprintf (stderr, "cannot create %s: output stream failed\n", file.getFullPathName().toRawUTF8());
+        return false;
+    }
+
+    juce::AudioBuffer<float> buffer (2, static_cast<int> (rendered.left.size()));
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+    {
+        buffer.setSample (0, sample, rendered.left[static_cast<size_t> (sample)]);
+        buffer.setSample (1, sample, rendered.right[static_cast<size_t> (sample)]);
+    }
+
+    juce::WavAudioFormat format;
+    const auto options = juce::AudioFormatWriter::Options()
+        .withSampleRate (sampleRate)
+        .withNumChannels (2)
+        .withBitsPerSample (24);
+
+    {
+        auto writer = format.createWriterFor (outputStream, options);
+        if (writer == nullptr)
+        {
+            std::fprintf (stderr, "cannot create %s: WAV writer failed\n", file.getFullPathName().toRawUTF8());
+            return false;
+        }
+
+        if (! writer->writeFromAudioSampleBuffer (buffer, 0, buffer.getNumSamples()))
+        {
+            std::fprintf (stderr, "cannot write %s: sample write failed\n", file.getFullPathName().toRawUTF8());
+            return false;
+        }
+    }
+
+    if (! file.existsAsFile() || file.getSize() <= 0)
+    {
+        std::fprintf (stderr, "cannot write %s: output file is empty or absent\n", file.getFullPathName().toRawUTF8());
+        return false;
+    }
+
+    return true;
 }
-double maxStep (const std::vector<float>& v, size_t a, size_t b)
+
+struct MeasurementRange
 {
-    double m = 0;
-    for (size_t i = std::max<size_t> (a, 1); i < std::min (b, v.size()); ++i)
-        m = std::max (m, (double) std::abs (v[i] - v[i - 1]));
-    return m;
+    size_t start = 0;
+    size_t end = 0;
+};
+
+MeasurementRange boundedRange (const Rendered& rendered, size_t requestedStart, size_t requestedEnd)
+{
+    const auto size = std::min (rendered.left.size(), rendered.right.size());
+    const auto start = std::min (requestedStart, size);
+    return { start, std::min (std::max (requestedEnd, start), size) };
 }
-// Crude spectral centroid via zero-crossing rate -- enough to show whether the
-// frozen tail keeps the same brightness as the source.
-double zcr (const std::vector<float>& v, size_t a, size_t b)
+
+struct Measurements
 {
-    size_t n = 0, cross = 0;
-    for (size_t i = std::max<size_t> (a, 1); i < std::min (b, v.size()); ++i)
-    { if ((v[i-1] < 0) != (v[i] < 0)) ++cross; ++n; }
-    return n ? (double) cross / (double) n * SR / 2.0 : 0.0;
+    double peak = 0.0;
+    double rms = 0.0;
+    double dc = 0.0;
+    double maximumStep = 0.0;
+    double approximateBrightnessHz = 0.0;
+    double maximumAbsoluteStereoDifference = 0.0;
+    bool finite = true;
+};
+
+bool allSamplesFinite (const Rendered& rendered)
+{
+    if (rendered.left.size() != rendered.right.size())
+        return false;
+
+    for (size_t sample = 0; sample < rendered.left.size(); ++sample)
+        if (! std::isfinite (rendered.left[sample]) || ! std::isfinite (rendered.right[sample]))
+            return false;
+
+    return true;
+}
+
+double maximumDryDifference (const Rendered& rendered, size_t start, size_t end)
+{
+    const auto size = rendered.left.size();
+    if (rendered.right.size() != size
+        || rendered.dryLeft.size() != size
+        || rendered.dryRight.size() != size
+        || start > end
+        || end > size)
+    {
+        return std::numeric_limits<double>::infinity();
+    }
+
+    double difference = 0.0;
+    for (size_t sample = start; sample < end; ++sample)
+    {
+        difference = std::max (
+            difference,
+            std::max (std::abs (static_cast<double> (rendered.left[sample])
+                                - static_cast<double> (rendered.dryLeft[sample])),
+                      std::abs (static_cast<double> (rendered.right[sample])
+                                - static_cast<double> (rendered.dryRight[sample]))));
+    }
+    return difference;
+}
+
+Measurements measure (const Rendered& rendered, MeasurementRange range)
+{
+    Measurements measurements;
+    measurements.finite = allSamplesFinite (rendered);
+    range = boundedRange (rendered, range.start, range.end);
+    const auto numberOfStereoSamples = range.end - range.start;
+    if (numberOfStereoSamples == 0)
+        return measurements;
+
+    double sumSquares = 0.0;
+    double sum = 0.0;
+    size_t zeroCrossings = 0;
+    size_t zeroCrossingPairs = 0;
+
+    for (size_t sample = range.start; sample < range.end; ++sample)
+    {
+        const double left = rendered.left[sample];
+        const double right = rendered.right[sample];
+        measurements.peak = std::max (measurements.peak, std::max (std::abs (left), std::abs (right)));
+        sumSquares += left * left + right * right;
+        sum += left + right;
+        measurements.maximumAbsoluteStereoDifference = std::max (
+            measurements.maximumAbsoluteStereoDifference, std::abs (left - right));
+
+        if (sample > range.start)
+        {
+            const double previousLeft = rendered.left[sample - 1];
+            const double previousRight = rendered.right[sample - 1];
+            measurements.maximumStep = std::max (measurements.maximumStep,
+                                                 std::max (std::abs (left - previousLeft),
+                                                           std::abs (right - previousRight)));
+            if ((previousLeft < 0.0) != (left < 0.0))
+                ++zeroCrossings;
+            ++zeroCrossingPairs;
+        }
+    }
+
+    const auto denominator = static_cast<double> (numberOfStereoSamples);
+    measurements.rms = std::sqrt (sumSquares / (2.0 * denominator));
+    measurements.dc = sum / (2.0 * denominator);
+    measurements.approximateBrightnessHz = zeroCrossingPairs > 0
+        ? static_cast<double> (zeroCrossings) / static_cast<double> (zeroCrossingPairs) * sampleRate / 2.0
+        : 0.0;
+    measurements.finite = measurements.finite
+        && std::isfinite (measurements.peak)
+        && std::isfinite (measurements.rms)
+        && std::isfinite (measurements.dc)
+        && std::isfinite (measurements.maximumStep)
+        && std::isfinite (measurements.approximateBrightnessHz)
+        && std::isfinite (measurements.maximumAbsoluteStereoDifference);
+    return measurements;
+}
+
+void printMeasurements (const char* name, const char* region,
+                        MeasurementRange range, const Measurements& measurements)
+{
+    std::printf ("%-20s %-14s [%6zu,%6zu) %8.4f %8.4f %9.2e %10.4f %12.0f %7s %10.3e\n",
+                 name,
+                 region,
+                 range.start,
+                 range.end,
+                 measurements.peak,
+                 measurements.rms,
+                 measurements.dc,
+                 measurements.maximumStep,
+                 measurements.approximateBrightnessHz,
+                 measurements.finite ? "yes" : "no",
+                 measurements.maximumAbsoluteStereoDifference);
 }
 } // namespace
 
 int main (int argc, char** argv)
 {
-    const juce::File outDir (argc > 1 ? juce::String (argv[1]) : juce::String ("/tmp/gf-demo"));
-    outDir.createDirectory();
-
-    struct Case { const char* name; float pitch; float xfade; float hold; };
-    const Case cases[] {
-        // Hold-length sweep. The source steps up two semitones per second, so a
-        // short hold locks onto the last step while a long hold loops back
-        // through several of them.
-        { "hold-0100ms",        1.0f,  30.0f,   100.0f },
-        { "hold-0250ms",        1.0f,  30.0f,   250.0f },
-        { "hold-0500ms",        1.0f,  30.0f,   500.0f },
-        { "hold-1000ms-default",1.0f,  30.0f,  1000.0f },
-        { "hold-2000ms",        1.0f,  30.0f,  2000.0f },
-        { "hold-4000ms",        1.0f,  30.0f,  4000.0f },
-        // Pitch and crossfade behaviour at the default hold.
-        { "freeze-octave-up",   2.0f,  30.0f,  1000.0f },
-        { "freeze-octave-down", 0.5f,  30.0f,  1000.0f },
-        { "freeze-short-xfade", 1.0f,   1.0f,  1000.0f },
-    };
-
-    std::printf ("%-22s %8s %8s %9s %10s %9s %9s\n",
-                 "case", "peak", "rms", "dc", "maxstep", "zcr_src", "zcr_frz");
-    std::printf ("%s\n", juce::String::repeatedString ("-", 78).toRawUTF8());
-
-    // Dry reference row first, so the frozen numbers have a baseline to sit
-    // against -- a maxstep only means something relative to the source's own.
+    const juce::File outputDirectory (argc > 1 ? juce::String (argv[1]) : juce::String ("/tmp/gf-demo"));
+    if (! outputDirectory.isDirectory()
+        && (! outputDirectory.createDirectory() || ! outputDirectory.isDirectory()))
     {
-        GranularFreezeAudioProcessor p;
-        p.setPlayConfigDetails (2, 2, SR, BS);
-        p.prepareToPlay (SR, BS);
-        setParam (p, "freeze", 0.0f);
-        juce::AudioBuffer<float> buf (2, BS); juce::MidiBuffer m; Source src;
-        std::vector<float> d;
-        for (int b = 0; b < 500; ++b)
+        std::fprintf (stderr, "cannot create output directory %s\n", outputDirectory.getFullPathName().toRawUTF8());
+        return 1;
+    }
+
+    std::printf ("measurement regions: dry-reference uses all samples; v0.2 cases use settled frozen samples after two crossfade lengths.\n");
+    std::printf ("%-20s %-14s %-15s %8s %8s %9s %10s %12s %7s %10s\n",
+                 "case", "region", "samples", "peak", "rms", "dc", "max-step",
+                 "brightness-Hz", "finite", "max|L-R|");
+    std::printf ("%s\n", juce::String::repeatedString ("-", 138).toRawUTF8());
+
+    const auto dryReference = renderDryReference();
+    const auto dryRange = boundedRange (dryReference, 0, dryReference.left.size());
+    const auto dryMeasurements = measure (dryReference, dryRange);
+    printMeasurements (dryReferenceCase.name, "all", dryRange, dryMeasurements);
+    if (! dryMeasurements.finite)
+    {
+        std::fprintf (stderr, "non-finite rendered sample or measurement in dry-reference\n");
+        return 1;
+    }
+
+    if (! writeWav (outputDirectory.getChildFile ("dry-reference.wav"), dryReference))
+        return 1;
+
+    for (const auto& caseToRender : renderCases)
+    {
+        const auto rendered = renderCase (caseToRender);
+        const auto requiredTransitionSamples = static_cast<size_t> (std::ceil (
+            static_cast<double> (caseToRender.crossfadeMs) * 0.001 * sampleRate));
+        const auto renderedPostUnfreezeSamples = rendered.left.size() - rendered.freezeOffAt;
+        const auto minimumPostUnfreezeSamples = requiredTransitionSamples
+                                              + static_cast<size_t> (blockSize);
+        if (renderedPostUnfreezeSamples < minimumPostUnfreezeSamples)
         {
-            for (int i = 0; i < BS; ++i) { float l, r; src.next (l, r); buf.setSample (0,i,l); buf.setSample (1,i,r); }
-            m.clear(); p.processBlock (buf, m);
-            for (int i = 0; i < BS; ++i) d.push_back (buf.getSample (0, i));
+            std::fprintf (stderr,
+                          "%s: post-Unfreeze render has %zu samples; need at least %zu for the complete transition plus one full live guard block\n",
+                          caseToRender.name,
+                          renderedPostUnfreezeSamples,
+                          minimumPostUnfreezeSamples);
+            return 1;
         }
-        std::printf ("%-22s %8.4f %8.4f %9.2e %10.4f %9.0f %9s\n", "dry-reference",
-                     peak (d, 0, d.size()), rms (d, 0, d.size()), dc (d, 0, d.size()),
-                     maxStep (d, 0, d.size()), zcr (d, 0, d.size()), "-");
-    }
-
-    for (const auto& c : cases)
-    {
-        // 400 blocks live (~4.27 s captured), 200 frozen, 20 back to live.
-        auto r = render (c.name, c.pitch, c.xfade, c.hold, 400, 200, 20);
-        const size_t on  = (size_t) r.freezeOnAt[0];
-        const size_t off = (size_t) r.freezeOffAt[0];
-        const size_t xf  = (size_t) std::round (c.xfade * 0.001 * SR);
-
-        // measure the settled frozen region, past the crossfade
-        const size_t fa = std::min (on + xf * 2, off), fb = off;
-
-        std::printf ("%-22s %8.4f %8.4f %9.2e %10.4f %9.0f %9.0f\n",
-                     c.name, peak (r.l, fa, fb), rms (r.l, fa, fb), dc (r.l, fa, fb),
-                     maxStep (r.l, fa, fb), zcr (r.l, 0, on), zcr (r.l, fa, fb));
-
-        writeWav (outDir.getChildFile (juce::String (c.name) + ".wav"), r);
-    }
-
-    // A dry reference so the frozen files can be compared against the source.
-    {
-        GranularFreezeAudioProcessor p;
-        p.setPlayConfigDetails (2, 2, SR, BS);
-        p.prepareToPlay (SR, BS);
-        setParam (p, "freeze", 0.0f);
-        juce::AudioBuffer<float> buf (2, BS); juce::MidiBuffer m; Source src; Rendered dry;
-        for (int b = 0; b < 500; ++b)
+        if (juce::String (caseToRender.name) == "transition-long"
+            && renderedPostUnfreezeSamples < static_cast<size_t> (14400 + blockSize))
         {
-            for (int i = 0; i < BS; ++i) { float l, r; src.next (l, r); buf.setSample (0,i,l); buf.setSample (1,i,r); }
-            m.clear(); p.processBlock (buf, m);
-            for (int i = 0; i < BS; ++i) { dry.l.push_back (buf.getSample (0,i)); dry.r.push_back (buf.getSample (1,i)); }
+            std::fprintf (stderr,
+                          "transition-long: expected at least 14,400 transition samples plus a 512-sample guard block\n");
+            return 1;
         }
-        writeWav (outDir.getChildFile ("dry-reference.wav"), dry);
+
+        const auto guardStart = rendered.left.size() - static_cast<size_t> (blockSize);
+        const double guardDryDifference = maximumDryDifference (
+            rendered, guardStart, rendered.left.size());
+        constexpr double guardTolerance = 1.0e-7;
+        if (! std::isfinite (guardDryDifference) || guardDryDifference > guardTolerance)
+        {
+            std::fprintf (stderr,
+                          "%s: final live guard block differs from corresponding dry input by %.9g (tolerance %.1e)\n",
+                          caseToRender.name,
+                          guardDryDifference,
+                          guardTolerance);
+            return 1;
+        }
+        const auto crossfadeSamples = static_cast<size_t> (std::llround (
+            static_cast<double> (caseToRender.crossfadeMs) * 0.001 * sampleRate));
+        const auto range = boundedRange (rendered, rendered.freezeOnAt + 2 * crossfadeSamples,
+                                         rendered.freezeOffAt);
+        const auto measurements = measure (rendered, range);
+        printMeasurements (caseToRender.name, "settled-frozen", range, measurements);
+        std::printf ("%-20s lifecycle      post=%5zu guard-dry-max=%10.3e\n",
+                     caseToRender.name,
+                     renderedPostUnfreezeSamples,
+                     guardDryDifference);
+
+        if (! measurements.finite)
+        {
+            std::fprintf (stderr, "non-finite rendered sample or measurement in %s\n", caseToRender.name);
+            return 1;
+        }
+
+        if (! writeWav (outputDirectory.getChildFile (juce::String (caseToRender.name) + ".wav"), rendered))
+            return 1;
     }
 
-    std::printf ("\nwrote wavs to %s\n", outDir.getFullPathName().toRawUTF8());
+    std::printf ("wrote 16 stereo 48 kHz 24-bit WAV files to %s\n",
+                 outputDirectory.getFullPathName().toRawUTF8());
     return 0;
 }

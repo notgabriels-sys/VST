@@ -3,7 +3,7 @@ name: Release Candidate Build
 on:
   push:
     tags:
-      - v0.1.2-rc.*
+      - v0.2.0-rc.*
   pull_request:
     paths:
       - .github/workflows/release.yml
@@ -91,13 +91,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test_binary=$(find build -type f \( -name 'GranularFreezeTests' -o -name 'GranularFreezeTests.exe' \) -print -quit)
-          if [ -z "$test_binary" ]; then
-            echo "GranularFreezeTests binary not found under build/" >&2
-            exit 1
-          fi
-          echo "running $test_binary"
-          "$test_binary"
+          for name in GranularFreezeEngineTests GranularFreezeTests; do
+            test_binary=$(find build -type f \( -name "$name" -o -name "$name.exe" \) -print -quit)
+            if [ -z "$test_binary" ]; then
+              echo "$name binary not found under build/" >&2
+              exit 1
+            fi
+            echo "running $test_binary"
+            "$test_binary"
+          done
 
       - name: Sign macOS bundles (Developer ID)
         id: mac_sign
@@ -491,6 +493,9 @@ jobs:
             printf 'headline=%s\n' "$headline"
             echo "body<<RELEASE_NOTES_EOF"
             echo "$headline"
+            echo
+            echo "Granular Freeze v0.2.0 Grain Core candidate."
+            echo "Automated checks do not replace exact-artifact DAW validation or owner listening approval."
             echo
             echo "macOS Developer ID signed: $mac_signed"
             echo "macOS notarized and stapled: $mac_notarized"

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # VERSION is required: juce_add_plugin needs PROJECT_VERSION to derive the
 # plugin version, and errors out without it.
-project(GranularFreezePlugin VERSION 0.1.2)
+project(GranularFreezePlugin VERSION 0.2.0)
 
 # Callers may provide a local JUCE checkout through
 # GRANULAR_FREEZE_JUCE_SOURCE_DIR. Otherwise, use FetchContent below to fetch

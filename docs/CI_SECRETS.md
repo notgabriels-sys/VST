@@ -5,7 +5,7 @@
 The release workflow contains Developer ID signing, notarization and
 Authenticode signing. Pull requests exercise the unsigned build/package path.
 A manual run can exercise signing without creating a release, and only
-newly created `v0.1.2-rc.*` tag pushes can create a private draft prerelease.
+newly created `v0.2.0-rc.*` tag pushes can create a private draft prerelease.
 Non-creation updates and force-moves are rejected, and the publish job fails if
 any release already exists for the tag instead of updating it. The workflow
 cannot provide durable history for a tag that was deleted before being

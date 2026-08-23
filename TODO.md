@@ -1,52 +1,58 @@
 # Todo
 
-## Before any release
+## Remaining gates before any release decision
 
 - [ ] Leave `v0.1.0` and the older private-draft `v0.1.1-rc.1` untouched; use
-      only a newly verified-unused `v0.1.2-rc.N` tag for a future candidate
+      only a newly verified-unused `v0.2.0-rc.N` tag for a future candidate.
+- [ ] Gabriel evaluates the build by ear in Ableton Live or Bitwig.
 - [ ] Run fresh CI for the exact candidate on `macos-15-intel` and
-      `windows-2022`; both jobs must build, test, package, and upload artifacts
+      `windows-2022`; both jobs must build, run both offline suites, package,
+      and upload artifacts.
+- [ ] Exercise the v0.2 release-candidate workflow; it has not been run for
+      this Grain Core.
 - [ ] Verify both downloaded ZIPs against `SHA256SUMS.txt` and inspect their
-      contents before installing them
-- [ ] Run exact-`0.1.2` VST3 functional checks in Ableton and Bitwig, plus AU
-      checks in Ableton or another AU-capable macOS host. The older
-      `v0.1.1-rc.1` assets passed a limited Ableton smoke test, but they predate
-      Hold Length.
-- [ ] Run the cross-version AU automation migration smoke from
-      `docs/BUILD_AND_TEST.md`: save legacy Pitch/Freeze/Crossfade automation
-      with the exact `v0.1.1-rc.1` AU, reopen it with exact `0.1.2`, verify each
-      lane mapping, and separately automate Hold.
-- [ ] Evaluate the exact candidate by ear and make the owner-controlled
-      subjective musical/sound-quality decision
-- [ ] Confirm the `holdMs` default (1000 ms) feels right by ear. Freeze now
-      holds a recent window rather than looping the whole capture, per
-      docs/PRODUCT_SPEC.md; the range and default are a judgement call.
-- [ ] Validate the exact macOS and Windows assets from the draft release in
-      target DAWs before publishing
-- [ ] Confirm the JUCE 8 licensing basis for the intended distribution model
-- [ ] Configure GitHub Secrets only after the required credentials exist, then
-      run and verify the already-implemented Developer ID/notarization and
-      Authenticode paths before public distribution. Ad-hoc macOS signatures
-      and unsigned Windows builds are for engineering testing only.
-- [ ] Obtain explicit approval before publishing a GitHub release or manually
-      uploading release files through Gumroad's authenticated Content UI
+      contents before any installation or DAW validation.
+- [ ] Validate the exact macOS and Windows candidate assets in target DAWs,
+      including all seven parameters, Hold chronology, Grain Core ranges,
+      transitions, automation, and v0.1/v0.1.2 state migration.
+- [ ] Confirm the JUCE 8 licensing basis for the intended distribution model.
+- [ ] Configure the reviewed secret contract and execute/verify Developer ID
+      signing and notarization on macOS plus Authenticode signing on Windows.
+- [ ] Make commercial and release decisions after the listening and workflow
+      gates. No price, date, store, or commercial validation is set.
+- [ ] Obtain explicit approval before creating a tag, publishing a GitHub
+      release, or uploading release files to a storefront.
 
-## Feature work
+## Deferred feature work
 
-- [ ] Grain engine: envelope, density, size
-- [ ] Time-stretch independent of pitch
-- [ ] Preset system and performance bank
-- [ ] Fill `presets/` with example patches
+- [ ] Time-stretch independent of pitch.
+- [ ] Presets and a performance bank.
+- [ ] Feedback or recursive grain capture.
+- [ ] Random scatter, jitter, or probability.
 
-## Done
+## Done and evidenced locally
 
-- [x] Circular buffer and freeze trigger
-- [x] Parameters via APVTS, mapped to GUI controls
-- [x] Crossfade on freeze/unfreeze, and at the loop point
-- [x] CI workflows configured for macOS and Windows
-- [x] Offline test suite wired into both CI matrix jobs
-- [x] GitHub repo and CI pipeline
-- [x] Hold uses a later JUCE parameter-version generation intended to preserve
-      the three legacy AU parameter indices; exact cross-version DAW migration
-      validation remains open above
-- [x] The physical capture buffer matches the advertised 10-second Hold range
+- [x] Grain Engine: deterministic fixed 64-voice playback, Hann envelopes,
+      cubic pitched reads, and overlap normalization.
+- [x] Size (grainSizeMs): 5–200 ms, default 80 ms.
+- [x] Density (densityHz): 0–200 grains/s, default 20 grains/s; zero settles
+      to silence and positive Density launches deterministically.
+- [x] Position (position): 0.00–1.00, default 1.00; chronological
+      oldest-to-newest complete windows, with 1.00 selecting the newest.
+- [x] Hold (holdMs): 50–10,000 ms, default 1,000 ms; most-recent chronological
+      window latched on fully live Freeze engagement.
+- [x] Ten-second chronological capture, immutable held view, and reversible
+      Freeze/Unfreeze transitions.
+- [x] Seven APVTS parameters, stable AU generations, host automation
+      attachments, v0.1/v0.1.2 migration, v0.2 state round-trip, automation,
+      and finite-output evidence.
+- [x] Two offline test binaries and the sixteen-file renderer listening set.
+- [x] CI workflow configured for both offline suites on pinned macOS and
+      Windows runners, with strict platform packaging and artifact failure
+      gates. Remote execution remains unverified for this merge.
+- [x] Fail-closed conditional signing/notarization workflow and
+      signature-preserving packaging implemented; no credential-dependent run
+      has completed.
+
+Local automated evidence does not replace remote macOS/Windows CI, Gabriel's
+DAW listening evaluation, signing/notarization, or commercial/release work.
