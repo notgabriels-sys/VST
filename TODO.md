@@ -1,27 +1,35 @@
 # Todo
 
-## Before any release
+## Remaining gates before any release decision
 
-- [ ] Evaluate in a DAW by ear — nothing here has been listened to yet
-- [ ] Decide whether freeze should hold the *most recent* audio rather than
-      looping the whole capture from oldest first (see PluginProcessor.cpp,
-      `readPosition = writePosition` on freeze entry). Current behaviour is
-      closer to a looper than a freeze.
-- [ ] Exercise the release workflow — it has never run
-- [ ] Code signing + notarization, or accept Gatekeeper/SmartScreen warnings
+- [ ] Gabriel evaluates the build by ear in Ableton Live or Bitwig.
+- [ ] Exercise the release workflow for v0.2.
+- [ ] Decide and complete code signing/notarization, or explicitly accept
+      platform warnings.
+- [ ] Make commercial and release decisions after the listening and workflow
+      gates. No price, date, store, or commercial validation is set.
 
-## Feature work
+## Deferred feature work
 
-- [ ] Grain engine: envelope, density, size
-- [ ] Time-stretch independent of pitch
-- [ ] Preset system and performance bank
-- [ ] Fill `presets/` with example patches
+- [ ] Time-stretch independent of pitch.
+- [ ] Presets and a performance bank.
+- [ ] Feedback or recursive grain capture.
+- [ ] Random scatter, jitter, or probability.
 
-## Done
+## Done and evidenced locally
 
-- [x] Circular buffer and freeze trigger
-- [x] Parameters via APVTS, mapped to GUI controls
-- [x] Crossfade on freeze/unfreeze, and at the loop point
-- [x] Local build and CI on macOS and Windows
-- [x] Offline test suite running in CI
-- [x] GitHub repo and CI pipeline
+- [x] Grain Engine: deterministic fixed 64-voice playback, Hann envelopes,
+      cubic pitched reads, and overlap normalization.
+- [x] Size (grainSizeMs): 5–200 ms, default 80 ms.
+- [x] Density (densityHz): 0–200 grains/s, default 20 grains/s; zero settles
+      to silence and positive Density launches deterministically.
+- [x] Position (position): 0.00–1.00, default 1.00; chronological
+      oldest-to-newest complete windows, with 1.00 selecting the newest.
+- [x] Eight-second chronological capture, immutable frozen view, and reversible
+      Freeze/Unfreeze transitions.
+- [x] Six APVTS parameters, host automation attachments, v0.1 state migration,
+      v0.2 state round-trip, automation and finite-output evidence.
+- [x] Two offline test binaries and the fourteen-file renderer listening set.
+
+Local automated evidence does not replace remote macOS/Windows CI, Gabriel's
+DAW listening evaluation, signing/notarization, or commercial/release work.

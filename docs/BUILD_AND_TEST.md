@@ -1,5 +1,13 @@
 # Build & Test — Granular Freeze
 
+## Verification boundary
+
+**Implemented and automatically tested. Not yet evaluated by Gabriel in Ableton
+Live or Bitwig. It is not released. No commercial validation.** Local build, offline
+tests, and renderer output prove implementation/file structure only. They do
+not prove musical quality, practical CPU use, a DAW result, remote macOS/Windows
+CI, signing/notarization, release readiness, or commercial validation.
+
 ## Prerequisites
 
 - **macOS**: Xcode + command line tools, CMake >= 3.22
@@ -39,23 +47,44 @@ Windows (default Visual Studio generator):
 
 Note the space in the product name — quote these paths in shell commands.
 
-## Tests
+## Offline automated tests
 
-`tests/PluginTests.cpp` drives the AudioProcessor directly with generated
-signals and asserts on the output. No host and no audio device are needed, and
-it runs in CI on both platforms.
+Both binaries need no host/device and print ALL TESTS PASSED (0 failures) when
+they pass:
 
+    cmake --build build --config Release --target GranularFreezeEngineTests --parallel
+    "build/tests/GranularFreezeEngineTests_artefacts/Release/GranularFreezeEngineTests"
     cmake --build build --config Release --target GranularFreezeTests --parallel
     "build/tests/GranularFreezeTests_artefacts/Release/GranularFreezeTests"
 
-It covers pass-through fidelity, L/R alignment while frozen, that freeze holds
-audio when the input goes silent, that neither freeze nor unfreeze produces a
-discontinuity, the pitch ratio, and the absence of NaN/Inf. Exit code is
-non-zero on failure.
+GranularFreezeEngineTests covers chronological circular reads, empty/short
+capture, fixed 64 voices, Size/Hann behavior, Density scheduling,
+oldest/newest Position, pitch, stereo timing, determinism, normalization, and
+finite bounds. GranularFreezeTests covers pass-through/frozen output, six
+controls and host attachments, v0.1 migration/v0.2 round-trip, automation,
+reversible transitions, and chunking.
 
-Both defects found during the initial bring-up — freeze outputting silence, and
-a click at the loop point — were invisible to the compiler and to auval, and
-were caught here. Add a case when you change the DSP.
+Processor preparation checks include 44.1 kHz fallback, 48 kHz behavior with
+prepared 64/512-sample blocks, a 2048-sample oversized host block, and finite
+rate bounds through 384 kHz. These are test points, not DAW certification.
+
+The CI workflow is configured to build and execute both binaries on macOS and
+Windows. A local result is not a remote CI result; obtain remote evidence from
+the relevant commit/PR.
+
+## Six controls
+
+| ID | Range | Default |
+| --- | --- | --- |
+| freeze | off / on | off |
+| pitch | 0.50–2.00 ratio, 0.01 step | 1.00 |
+| crossfadeMs | 1–500 ms, 1 ms step | 30 ms |
+| grainSizeMs | 5–200 ms, 1 ms step | 80 ms |
+| densityHz | 0–200 grains/s, 1 grain/s step | 20 grains/s |
+| position | 0.00–1.00, 0.01 step | 1.00 |
+
+Position 1.00 selects the newest complete grain window in valid chronological
+capture. All controls are host-automatable APVTS parameters.
 
 ## v0.2 listening renders
 
@@ -133,6 +162,21 @@ Worth checking by ear:
 Crossfade time is a parameter (`crossfadeMs`, 1-500 ms) with a slider in the
 UI; change it there rather than in code. Its default lives in
 `createParameterLayout()` in `src/PluginProcessor.cpp`.
+
+For the v0.2 human listening gate, also:
+
+- Compare short capture and full eight-second capture; check Position 0.00,
+  0.50, and 1.00 against changing input, confirming that 1.00 is the newest
+  complete window.
+- Audition Size 5/80/200 ms, Density 0/20/200 grains/s, and Pitch
+  0.50/1.00/2.00 for useful behavior, not merely finite output.
+- Toggle Freeze/Unfreeze and reversals for clicks, pumping, timeline
+  discontinuity, and capture-resume issues.
+- Use disparate stereo material and assess stereo stability and practical CPU
+  use in a realistic live set.
+
+No human DAW result exists yet. Do not infer compatibility, quality, CPU,
+release, or commercial claims from automated checks.
 
 ## Troubleshooting
 

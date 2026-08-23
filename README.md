@@ -1,64 +1,51 @@
 # Granular Freeze
 
-A cross-platform **VST3 + AU** audio plugin for live time/freeze effects,
-aimed at Ableton and Bitwig users.
+Granular Freeze v0.2.0 is a compact stereo AU/VST3 live-input effect.
 
-Author: Gabriel García Alonso · License: MIT
+**Implemented and automatically tested. Not yet evaluated by Gabriel in Ableton
+Live or Bitwig. It is not released. No commercial validation.** Automated tests and
+renderer metrics do not establish musical quality, CPU suitability, DAW
+compatibility, a release decision, pricing, or sales readiness.
 
-## Status
+## Implemented Grain Core
 
-Working prototype. It builds and passes tests on macOS and Windows, but has
-**not been released** and has not yet been evaluated by ear in a DAW.
+- Transparent stereo live pass-through records a chronological circular capture
+  of up to eight seconds.
+- Freeze snapshots valid capture and renders a deterministic fixed 64-voice
+  engine with Hann windows, cubic pitched reads, and overlap normalization.
+- Position 0.00 selects the oldest complete grain window; 1.00 selects the
+  newest complete window, not the raw circular-buffer write location.
+- Freeze/Unfreeze transitions are reversible from the current blend.
+- v0.1 state supplies defaults for new controls; v0.2 state round-trips all
+  six values. Tests cover migration, automation, finite guards, and chunking.
 
-**Implemented**
+## Controls
 
-- Circular-buffer freeze with a crossfaded transition in and out
-- Crossfaded loop point, so held audio does not click on repeat
-- Pitch control over frozen playback (0.5x–2.0x, cubic interpolation)
-- Parameters via `AudioProcessorValueTreeState` — automatable, and saved with
-  the session
-- UI with freeze toggle, pitch and crossfade-time sliders
-- CI on macOS + Windows with an offline test suite
+All six AudioProcessorValueTreeState parameters are host-automatable.
 
-**Not implemented** — the granular engine the name implies is still ahead:
+| Host ID | Control | Range | Default |
+| --- | --- | --- | --- |
+| freeze | Freeze | off / on | off |
+| pitch | Pitch | 0.50–2.00 ratio, 0.01 step | 1.00 |
+| crossfadeMs | Crossfade | 1–500 ms, 1 ms step | 30 ms |
+| grainSizeMs | Size | 5–200 ms, 1 ms step | 80 ms |
+| densityHz | Density | 0–200 grains/s, 1 grain/s step | 20 grains/s |
+| position | Position | 0.00–1.00, 0.01 step | 1.00 |
 
-- Grain envelope, density and size controls
-- Time-stretching independent of pitch
-- Preset system and performance bank
-- Code signing and notarization (builds are unsigned)
+Size determines new-grain duration. Density is a deterministic launch rate and
+zero settles frozen output to silence. Pitch is source-read rate. The editor
+exposes Freeze, Pitch, Position, Size, Density, and Crossfade.
 
-## Parameters
+## Evidence and deferred scope
 
-| Parameter | Range | Default |
-|---|---|---|
-| `freeze` | on / off | off |
-| `pitch` | 0.5x – 2.0x | 1.0x |
-| `crossfadeMs` | 1 – 500 ms | 30 ms |
+The offline GranularFreezeEngineTests and GranularFreezeTests executables need
+no host/device. GranularFreezeRender writes thirteen controlled Freeze cases
+plus dry-reference.wav: exactly fourteen stereo 48 kHz/24-bit WAV listening
+aids. The CI workflow is configured to run both binaries on macOS and Windows;
+a local run is not remote-CI or DAW-listening evidence.
 
-Stereo in / stereo out only. The capture buffer is 8 seconds; frozen playback
-loops whatever has been captured so far, which grows up to that limit.
-
-## Build
-
-    cmake -S . -B build -G "Xcode"      # macOS; omit -G on Windows
-    cmake --build build --config Release --parallel
-
-JUCE 8.0.15 is fetched automatically. Requires CMake >= 3.22. Full instructions,
-including how to run the tests and validate the AU, are in
-[docs/BUILD_AND_TEST.md](docs/BUILD_AND_TEST.md).
-
-## Layout
-
-    src/            plugin processor and editor
-    tests/          offline behavioural tests (run in CI)
-    docs/           build, release and CI secret guides
-    scripts/        packaging helpers
-    presets/        example patches (empty)
-    .github/        CI and release workflows
-
-## Docs
-
-- [docs/PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md) — intended product
-- [docs/BUILD_AND_TEST.md](docs/BUILD_AND_TEST.md) — building, testing, validating
-- [docs/RELEASE.md](docs/RELEASE.md) — tagging and publishing
-- [docs/CI_SECRETS.md](docs/CI_SECRETS.md) — secrets, signing status
+Time-stretch, presets/performance banks, feedback, random scatter/modulation,
+waveform UI, signing/notarization, store work, and all commercial/release
+decisions are deferred, not current product claims. See
+[docs/BUILD_AND_TEST.md](docs/BUILD_AND_TEST.md) for exact checks and human
+listening boundaries.
