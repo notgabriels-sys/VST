@@ -122,11 +122,13 @@ capture. All controls are host-automatable APVTS parameters.
 ## v0.2 listening renders
 
 `GranularFreezeRender` drives the processor offline and produces a fixed
-listening set. It is an artifact generator, not a CI quality threshold: it
-returns non-zero only for output-directory or WAV file I/O failure, or when a
-rendered sample or reported measurement is non-finite. Peak, RMS, DC,
-maximum adjacent-sample step, the approximate brightness proxy, and the
-maximum absolute L/R difference are diagnostics only.
+listening set. It is an artifact generator, not a musical-quality gate or CI
+quality threshold. It returns non-zero for output-directory or WAV file I/O
+failure, non-finite output or measurements, insufficient post-Unfreeze
+transition-plus-full-guard duration, or an invalid or non-dry-aligned final
+live guard. Peak, RMS, DC, maximum adjacent-sample step, the approximate
+brightness proxy, and the maximum absolute L/R difference remain diagnostic
+only and are not pass/fail musical-quality thresholds.
 
 ### Build and render on macOS (POSIX shell)
 
