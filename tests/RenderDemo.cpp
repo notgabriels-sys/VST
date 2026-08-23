@@ -23,26 +23,31 @@ struct Case
     float densityHz;
     float position;
     float pitch;
+    float holdMs;
     float crossfadeMs;
 };
 
 constexpr Case renderCases[] {
-    { "size-short",        10.0f,  20.0f, 1.0f, 1.0f,  30.0f },
-    { "size-long",        180.0f,  20.0f, 1.0f, 1.0f,  30.0f },
-    { "density-low",       80.0f,   5.0f, 1.0f, 1.0f,  30.0f },
-    { "density-high",      80.0f, 120.0f, 1.0f, 1.0f,  30.0f },
-    { "position-oldest",   80.0f,  20.0f, 0.0f, 1.0f,  30.0f },
-    { "position-middle",   80.0f,  20.0f, 0.5f, 1.0f,  30.0f },
-    { "position-newest",   80.0f,  20.0f, 1.0f, 1.0f,  30.0f },
-    { "pitch-down",        80.0f,  20.0f, 1.0f, 0.5f,  30.0f },
-    { "pitch-unity",       80.0f,  20.0f, 1.0f, 1.0f,  30.0f },
-    { "pitch-up",          80.0f,  20.0f, 1.0f, 2.0f,  30.0f },
-    { "transition-short",  80.0f,  20.0f, 1.0f, 1.0f,   1.0f },
-    { "transition-normal", 80.0f,  20.0f, 1.0f, 1.0f,  30.0f },
-    { "transition-long",   80.0f,  20.0f, 1.0f, 1.0f, 300.0f },
+    { "size-short",        10.0f,  20.0f, 1.0f, 1.0f, 1000.0f,  30.0f },
+    { "size-long",        180.0f,  20.0f, 1.0f, 1.0f, 1000.0f,  30.0f },
+    { "density-low",       80.0f,   5.0f, 1.0f, 1.0f, 1000.0f,  30.0f },
+    { "density-high",      80.0f, 120.0f, 1.0f, 1.0f, 1000.0f,  30.0f },
+    { "position-oldest",   80.0f,  20.0f, 0.0f, 1.0f, 1000.0f,  30.0f },
+    { "position-middle",   80.0f,  20.0f, 0.5f, 1.0f, 1000.0f,  30.0f },
+    { "position-newest",   80.0f,  20.0f, 1.0f, 1.0f, 1000.0f,  30.0f },
+    { "hold-short",        80.0f,  20.0f, 0.0f, 1.0f,   80.0f,  30.0f },
+    { "hold-long",         80.0f,  20.0f, 0.0f, 1.0f,  400.0f,  30.0f },
+    { "pitch-down",        80.0f,  20.0f, 1.0f, 0.5f, 1000.0f,  30.0f },
+    { "pitch-unity",       80.0f,  20.0f, 1.0f, 1.0f, 1000.0f,  30.0f },
+    { "pitch-up",          80.0f,  20.0f, 1.0f, 2.0f, 1000.0f,  30.0f },
+    { "transition-short",  80.0f,  20.0f, 1.0f, 1.0f, 1000.0f,   1.0f },
+    { "transition-normal", 80.0f,  20.0f, 1.0f, 1.0f, 1000.0f,  30.0f },
+    { "transition-long",   80.0f,  20.0f, 1.0f, 1.0f, 1000.0f, 300.0f },
 };
 
-constexpr Case dryReferenceCase { "dry-reference", 80.0f, 20.0f, 1.0f, 1.0f, 30.0f };
+constexpr Case dryReferenceCase {
+    "dry-reference", 80.0f, 20.0f, 1.0f, 1.0f, 1000.0f, 30.0f
+};
 
 void setParam (GranularFreezeAudioProcessor& processor, const juce::String& id, float value)
 {
@@ -57,6 +62,7 @@ void configure (GranularFreezeAudioProcessor& processor, const Case& renderCase,
     setParam (processor, "freeze", freeze);
     setParam (processor, "pitch", renderCase.pitch);
     setParam (processor, "crossfadeMs", renderCase.crossfadeMs);
+    setParam (processor, "holdMs", renderCase.holdMs);
     setParam (processor, "grainSizeMs", renderCase.grainSizeMs);
     setParam (processor, "densityHz", renderCase.densityHz);
     setParam (processor, "position", renderCase.position);
@@ -451,7 +457,7 @@ int main (int argc, char** argv)
             return 1;
     }
 
-    std::printf ("wrote 14 stereo 48 kHz 24-bit WAV files to %s\n",
+    std::printf ("wrote 16 stereo 48 kHz 24-bit WAV files to %s\n",
                  outputDirectory.getFullPathName().toRawUTF8());
     return 0;
 }

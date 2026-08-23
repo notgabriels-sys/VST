@@ -93,9 +93,10 @@ they pass.
 GranularFreezeEngineTests covers chronological circular reads, empty/short
 capture, fixed 64 voices, Size/Hann behavior, Density scheduling,
 oldest/newest Position, pitch, stereo timing, determinism, normalization, and
-finite bounds. GranularFreezeTests covers pass-through/frozen output, six
-controls and host attachments, v0.1 migration/v0.2 round-trip, automation,
-reversible transitions, and chunking.
+finite bounds. GranularFreezeTests covers pass-through/frozen output, seven
+controls and host attachments, v0.1/v0.1.2 migration, v0.2 round-trip,
+automation, reversible transitions, Hold chronology and the ten-second
+physical endpoint, and chunking.
 
 Processor preparation checks include 44.1 kHz fallback, 48 kHz behavior with
 prepared 64/512-sample blocks, a 2048-sample oversized host block, and finite
@@ -105,13 +106,14 @@ The CI workflow is configured to build and execute both binaries on macOS and
 Windows. A local result is not a remote CI result; obtain remote evidence from
 the relevant commit/PR.
 
-## Six controls
+## Seven controls
 
 | ID | Range | Default |
 | --- | --- | --- |
 | freeze | off / on | off |
 | pitch | 0.50–2.00 ratio, 0.01 step | 1.00 |
 | crossfadeMs | 1–500 ms, 1 ms step | 30 ms |
+| holdMs | 50–10,000 ms, 1 ms step, 0.4 skew | 1,000 ms |
 | grainSizeMs | 5–200 ms, 1 ms step | 80 ms |
 | densityHz | 0–200 grains/s, 1 grain/s step | 20 grains/s |
 | position | 0.00–1.00, 0.01 step | 1.00 |
@@ -145,19 +147,21 @@ only and are not pass/fail musical-quality thresholds.
     & ".\build\tests\Release\GranularFreezeRender.exe" $GrainRenderDir
     if ($LASTEXITCODE -ne 0) { throw "GranularFreezeRender failed with exit code $LASTEXITCODE" }
 
-The renderer writes exactly 14 non-empty stereo WAV files at 48 kHz and 24-bit:
+The renderer writes exactly 16 non-empty stereo WAV files at 48 kHz and 24-bit:
 
 - Size: `size-short` (10 ms), `size-long` (180 ms).
 - Density: `density-low` (5 Hz), `density-high` (120 Hz).
 - Position: `position-oldest` (0.0), `position-middle` (0.5),
   `position-newest` (1.0).
+- Hold: `hold-short` (80 ms), `hold-long` (400 ms), both at Position 0.0 so
+  the selected chronological window changes the source material.
 - Pitch: `pitch-down` (0.5x), `pitch-unity` (1.0x), `pitch-up` (2.0x).
 - Transition: `transition-short` (1 ms), `transition-normal` (30 ms),
   `transition-long` (300 ms).
 - `dry-reference`, generated once with the canonical 80 ms / 20 Hz / newest /
   unity / 30 ms configuration and Freeze off.
 
-Every v0.2 case sets all six APVTS parameters, captures live input with Freeze
+Every v0.2 case sets all seven APVTS parameters, captures live input with Freeze
 off, renders with Freeze on, then returns completely to live mode. The renderer
 derives the post-Unfreeze duration from the configured transition, adds one
 full 512-sample settled-live guard block, and verifies that final block against
@@ -169,7 +173,7 @@ not a spectral centroid.
 
 ### Exact file and format audit on macOS (POSIX shell)
 
-    for NAME in size-short size-long density-low density-high position-oldest position-middle position-newest pitch-down pitch-unity pitch-up transition-short transition-normal transition-long; do
+    for NAME in size-short size-long density-low density-high position-oldest position-middle position-newest hold-short hold-long pitch-down pitch-unity pitch-up transition-short transition-normal transition-long; do
       test -s "$GRAIN_RENDER_DIR/$NAME.wav"
     done
     test -s "$GRAIN_RENDER_DIR/dry-reference.wav"
@@ -184,13 +188,14 @@ fresh renderer output:
       "size-short", "size-long",
       "density-low", "density-high",
       "position-oldest", "position-middle", "position-newest",
+      "hold-short", "hold-long",
       "pitch-down", "pitch-unity", "pitch-up",
       "transition-short", "transition-normal", "transition-long",
       "dry-reference"
     )
     $WavFiles = @(Get-ChildItem -LiteralPath $GrainRenderDir -File -Filter "*.wav")
-    if ($WavFiles.Count -ne 14) {
-      throw "Expected exactly 14 WAV files, found $($WavFiles.Count)"
+    if ($WavFiles.Count -ne 16) {
+      throw "Expected exactly 16 WAV files, found $($WavFiles.Count)"
     }
     foreach ($Name in $ExpectedNames) {
       $WavPath = Join-Path $GrainRenderDir "$Name.wav"
@@ -204,7 +209,7 @@ fresh renderer output:
 
 `afinfo` is macOS-only, and this repository currently has no native
 cross-platform WAV inspector. The Windows audit therefore proves renderer exit
-success plus the exact fourteen-name/non-empty contract. The stereo 48 kHz /
+success plus the exact sixteen-name/non-empty contract. The stereo 48 kHz /
 24-bit structural check is performed locally on macOS with `afinfo` unless
 an explicitly chosen independent Windows inspector is added later.
 
@@ -226,7 +231,10 @@ slices, macOS 12.0 in every slice, valid ad-hoc signatures, required documents,
 and one clean archive root. The Windows script requires exactly one outer VST3
 bundle, its expected x86_64 binary, required documents, and one clean archive
 root. Both fail if an expected artifact is absent. These packages are not
-production signed or notarized.
+production signed or notarized. A normal local package uses an ad-hoc macOS
+signature or an unsigned Windows binary; the release workflow's
+credential-dependent production signing and notarization path is separate and
+has not executed.
 
 ## AU validation (macOS)
 
@@ -241,14 +249,20 @@ establish that the effect sounds right.
 
 ## DAW smoke test
 
-Install the exact extracted candidate assets, rescan in Ableton Live, Bitwig,
-or another host,
-and record the host version, OS version, format, sample rate, and block size.
+Install the exact extracted artifacts being evaluated: use GitHub draft assets
+for a tagged candidate and exact Actions artifacts for an unreleased branch or
+`main` revision. Rescan in Ableton Live, Bitwig, or another host, and record the
+commit/tag, artifact hash, host version, OS version, format, sample rate, and
+block size.
 At minimum:
 
 - Load VST3; on macOS also load AU in a host that supports it.
+- Confirm exactly seven controls in the stable host order: Freeze, Pitch,
+  Crossfade, Hold, Size, Density, Position.
 - Confirm dry pass-through before Freeze.
 - Toggle Freeze, mute the input, and confirm captured audio continues.
+- Compare short/default/long Hold values against changing source material and
+  confirm Hold changes made while frozen latch on the next fully live Freeze.
 - Move Pitch through 0.5x, 1.0x, and 2.0x and confirm playback rate responds.
 - Exercise short and long crossfade settings and repeated Freeze transitions.
 - Listen for clicks, dropouts, runaway level, denormals, or other glitches.
@@ -258,7 +272,7 @@ At minimum:
 
 - Sample rates 44.1k / 48k / 96k and block sizes 64 / 256 / 1024.
 - Freeze within the first few seconds of loading, and after a long run — the
-  captured region grows until it reaches the 8-second buffer.
+  captured region grows until it reaches the 10-second buffer.
 - Grain boundaries across short/long Size and low/high Density settings,
   listening for clicks, impulses, or level discontinuities.
 - Short-capture wrapped reads, especially when Size and Pitch require more
@@ -273,7 +287,7 @@ UI; change it there rather than in code. Its default lives in
 
 For the v0.2 human listening gate, also:
 
-- Compare short capture and full eight-second capture; check Position 0.00,
+- Compare short capture and full ten-second capture; check Position 0.00,
   0.50, and 1.00 against changing input, confirming that 1.00 is the newest
   complete window.
 - Audition Size 5/80/200 ms, Density 0/20/200 grains/s, and Pitch
@@ -283,8 +297,11 @@ For the v0.2 human listening gate, also:
 - Use disparate stereo material and assess stereo stability and practical CPU
   use in a realistic live set.
 
-No human DAW result exists yet. Do not infer compatibility, quality, CPU,
-release, or commercial claims from automated checks.
+The exact older `v0.1.1-rc.1` private-draft AU/VST3 assets passed a limited
+Ableton Live 12.4.2 functional smoke test at 48 kHz. They predate Hold and the
+Grain Core and therefore do not validate v0.2.0. No human DAW result exists for
+the current implementation. Do not infer compatibility, quality, CPU, release,
+or commercial claims from automated checks.
 Do not mark the candidate validated until this has been performed by ear. See
 `docs/RELEASE.md` for the complete release gate.
 
@@ -294,6 +311,7 @@ Do not mark the candidate validated until this has been performed by ear. See
 - **Skip tests and render utility**: configure with
   `-DGRANULAR_FREEZE_BUILD_TESTS=OFF`.
 - **Plugin does not appear**: rescan and check the host's plugin scan log.
-- **Signing warnings**: production signing and notarization are not implemented;
-  the macOS candidate is ad-hoc signed and Windows is unsigned. See
-  `docs/CI_SECRETS.md`.
+- **Signing warnings**: the fail-closed workflow is implemented, but no
+  credential-dependent Developer ID/notarization/Authenticode run has
+  completed. Ordinary engineering artifacts remain ad-hoc signed on macOS and
+  unsigned on Windows. See `docs/CI_SECRETS.md`.
