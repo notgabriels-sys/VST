@@ -1,8 +1,13 @@
 # Granular Freeze
 
-Granular Freeze 0.2.0 is a compact stereo live-input granular effect built with
-the [DISTRHO Plugin Framework](https://github.com/DISTRHO/DPF). It targets VST3
-and CLAP on macOS and Windows, plus Audio Unit on macOS.
+Granular Freeze catches the last seconds of a live signal and holds them just
+before they vanish. Inside that suspended memory, a deterministic granular
+engine can stretch the moment into weight, motion, or atmosphere without
+breaking the continuity of the performance.
+
+Version 0.2.0 is a compact stereo effect built with the
+[DISTRHO Plugin Framework](https://github.com/DISTRHO/DPF). It targets VST3 and
+CLAP on macOS and Windows, plus Audio Unit on macOS.
 
 Repository-authored source is MIT-licensed. DPF and its format/UI dependencies
 use permissive licenses with attribution requirements; exact notices ship in
@@ -31,13 +36,18 @@ use permissive licenses with attribution requirements; exact notices ship in
 | `densityHz` | Density | 0-200 Hz | 20 Hz |
 | `position` | Position | 0.00-1.00 | 1.00 |
 
+Click the central state control to capture or release the memory. Drag any
+continuous parameter vertically; hold Shift while dragging for fine control.
+
 ## Current verification boundary
 
-The framework-neutral engine/core/contract tests pass locally and DPF produces
-arm64 macOS VST3, AU, and CLAP bundles with the custom editor. This branch is
-not yet a release: universal macOS packaging, Windows CI, validators,
-exact-artifact DAW testing, signing/notarization, and owner listening approval
-remain independent gates. See `docs/BUILD_AND_TEST.md` and `docs/RELEASE.md`.
+The framework-neutral engine/core/contract suites pass on macOS and Windows.
+CI produces universal arm64/x86-64 macOS VST3, AU, and CLAP bundles and x86-64
+Windows VST3 and CLAP binaries. Apple AU validation passes, and the exact VST3
+has been observed loading with its editor open. Dedicated VST3/CLAP validator
+runs, final listening approval, production signing/notarization, tagging, and
+publication remain independent release gates. See `docs/DPF_PORT_VERIFICATION.md`,
+`docs/BUILD_AND_TEST.md`, and `docs/RELEASE.md`.
 
 ---
 

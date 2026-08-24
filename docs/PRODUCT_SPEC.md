@@ -2,9 +2,11 @@
 
 ## Status
 
-DPF migration in verification. Not released and not commercially validated.
-Automated tests, validators, and successful bundle creation are separate from
-DAW compatibility, listening approval, signing, delivery, and publication.
+DPF migration merged and cross-platform release-candidate builds verified. Not
+released or commercially validated. Automated tests, native AU validation,
+successful bundle creation, observed VST3 loading, dedicated third-party
+validators, listening approval, signing, delivery, and publication remain
+separate evidence gates.
 
 ## Processing contract
 
