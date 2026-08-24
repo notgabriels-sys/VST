@@ -144,7 +144,8 @@ jobs:
           }
           trap cleanup EXIT
 
-          printf '%s' "$MAC_CODESIGN_P12_BASE64" | base64 --decode -o "$P12"
+          # macOS runners provide BSD base64; GNU's --decode is not portable.
+          printf '%s' "$MAC_CODESIGN_P12_BASE64" | base64 -D -o "$P12"
           chmod 600 "$P12"
           security create-keychain -p "$MAC_KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security set-keychain-settings -lut 900 "$KEYCHAIN"
@@ -304,7 +305,7 @@ jobs:
           }
           trap cleanup_notary EXIT
 
-          printf '%s' "$MAC_NOTARIZE_API_KEY" | base64 --decode -o "$KEY"
+          printf '%s' "$MAC_NOTARIZE_API_KEY" | base64 -D -o "$KEY"
           chmod 600 "$KEY"
           set +e
           xcrun notarytool submit build/Granular-Freeze-macOS.zip \

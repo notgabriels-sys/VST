@@ -36,5 +36,6 @@ add_subdirectory(src)
 # Offline behavioural tests and the optional render utility.
 option(GRANULAR_FREEZE_BUILD_TESTS "Build offline behavioural tests" ON)
 if(GRANULAR_FREEZE_BUILD_TESTS)
+  enable_testing()
   add_subdirectory(tests)
 endif()

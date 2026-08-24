@@ -90,6 +90,13 @@ they pass.
     & ".\build\tests\Release\GranularFreezeTests.exe"
     if ($LASTEXITCODE -ne 0) { throw "GranularFreezeTests failed with exit code $LASTEXITCODE" }
 
+Both harnesses are also registered with CTest after configuration:
+
+    ctest --test-dir build -C Release --output-on-failure
+
+Treat `No tests were found` as a configuration failure, not a successful test
+run.
+
 GranularFreezeEngineTests covers chronological circular reads, empty/short
 capture, fixed 64 voices, Size/Hann behavior, Density scheduling,
 oldest/newest Position, pitch, stereo timing, determinism, normalization, and

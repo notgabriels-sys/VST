@@ -79,6 +79,13 @@ verify_signature() {
   codesign --verify --deep --strict "$1"
 }
 
+# Validate immutable bundle properties before mutating either signature. A
+# wrong-architecture build must fail as a pure preflight rather than leave one
+# bundle re-signed and the other untouched.
+for bundle in "${vst3_bundles[@]}" "${component_bundles[@]}"; do
+  verify_bundle "$bundle"
+done
+
 # Unsigned engineering candidates receive a valid ad-hoc bundle seal. A
 # Developer ID workflow passes --preserve-signature so packaging cannot replace
 # the production signature (or a stapled notarization ticket) with an ad-hoc one.
@@ -87,7 +94,6 @@ for bundle in "${vst3_bundles[@]}" "${component_bundles[@]}"; do
     codesign --force --deep --sign - "$bundle"
   fi
   verify_signature "$bundle"
-  verify_bundle "$bundle"
 done
 
 mkdir -p "$staging_directory"
