@@ -87,10 +87,32 @@ error rather than a later opaque compiler failure.
 DPF then uses its native OpenGL extension loader; no GLEW or runtime DLL is
 added.
 
+## Remote CI and downloaded artifacts
+
+Commit `18de27e` completed both GitHub Actions matrices successfully:
+
+- CI Build run `32760912128`: macOS and Windows passed
+- Release Candidate Build run `32760912064`: macOS and Windows passed; the
+  draft-release job was intentionally skipped for the pull-request event
+
+All Windows DSP tests passed on MSVC before packaging. The Windows build also
+confirmed that DPF emits CLAP as one `.clap` file (rather than a bundle
+directory), and the packager enforces that platform-specific layout.
+
+The CI Build artifacts were downloaded, tested with `unzip -t`, extracted, and
+inspected independently. Their SHA-256 values were:
+
+- macOS: `75c94998b67e30e3bbcc180c6dbc724e2e777c7713408165bdc3353a348ec10a`
+- Windows: `22b7fdb64157cc35d8ab53456f1a9bce899e6c7d8fc0eec53f00a58d51ae549a`
+
+The macOS archive contains VST3, AU, and CLAP plus the required documents. All
+three executable slices are exactly `x86_64 arm64`, and all extracted bundles
+pass `codesign --verify --deep --strict`. These remain ad-hoc signatures, not
+Developer ID/notarization evidence. The Windows archive contains VST3 and CLAP
+plus the required documents; both binaries identify as PE32+ x86-64.
+
 ## Remaining gates
 
-- macOS and Windows GitHub Actions on the final commit
-- Downloaded remote artifact inspection
 - VST3/CLAP validator tooling (none installed locally)
 - Exact DPF VST3/CLAP/AU DAW discovery, editor, automation, and save/reopen
 - Full listening/CPU approval
