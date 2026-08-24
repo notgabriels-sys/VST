@@ -8,10 +8,12 @@ separately dual-licensed under AGPLv3 or the commercial JUCE 8 licence. No
 distribution basis has been recorded for this product, so production binaries
 must not be published or sold. See [docs/RELEASE.md](docs/RELEASE.md).
 
-**Implemented and automatically tested. Not yet evaluated by Gabriel in Ableton
-Live or Bitwig. It is not released. No commercial validation.** Automated tests and
-renderer metrics do not establish musical quality, CPU suitability, DAW
-compatibility, a release decision, pricing, or sales readiness.
+**Implemented and automatically tested. The exact v0.2.0 VST3 has been
+discovered and instantiated in Ableton Live 12 and Bitwig Studio; its Ableton
+editor opened. Manual auditory QA and session-recall QA were waived, not
+passed. It is not publicly released and has no commercial validation.**
+Automated tests and host loading do not establish musical quality, CPU
+suitability, state recall, a release decision, pricing, or sales readiness.
 
 ## Implemented Grain Core
 
@@ -51,14 +53,16 @@ exposes Freeze, Pitch, Position, Size, Density, Hold, and Crossfade.
 The offline GranularFreezeEngineTests and GranularFreezeTests executables need
 no host/device. GranularFreezeRender writes fifteen controlled Freeze cases
 plus dry-reference.wav: exactly sixteen stereo 48 kHz/24-bit WAV listening
-aids. The current `main` commit
-[`3ccb569`](https://github.com/notgabriels-sys/VST/actions/runs/32673112054)
-completed the macOS and Windows CI matrix, including both test binaries,
-packaging, and artifact upload. The downloaded artifacts passed archive
-integrity and expected-payload checks; the macOS AU and VST3 also have valid
-ad-hoc seals, universal arm64/x86_64 binaries, and a macOS 12.0 minimum
-deployment target. This is main-line engineering evidence, not tagged-candidate
-or DAW-listening evidence.
+aids. The hardened `main` commit
+`4b7eeee17db72b03e7aa8f33e6f9b215c51c5279` completed the macOS and Windows
+CI matrix, including both test binaries, packaging, and artifact upload. The
+downloaded artifacts passed checksum, archive-integrity, and expected-payload
+checks; the macOS AU and VST3 also have valid ad-hoc seals, universal
+arm64/x86_64 binaries, and a macOS 12.0 minimum deployment target. Apple
+`auval` passed for the exact installed AU. Ableton Live 12 discovered both
+formats and loaded the VST3 editor; Bitwig Studio identified and instantiated
+the Arm64 VST3 and exposed its parameters. This is engineering and host-load
+evidence, not auditory, recall, signing, or commercial-release evidence.
 
 The hardened candidate path uses pinned macOS and Windows runners, a universal
 macOS 12 build, strict archive scripts, fail-closed conditional signing and
@@ -67,9 +71,9 @@ credential-dependent signing path has executed. Those paths still require
 remote execution and downloaded-asset inspection; their presence in the
 repository is not release evidence.
 
-The exact older `v0.1.1-rc.1` private-draft AU/VST3 assets passed a limited
-Ableton Live 12.4.2 functional smoke test, but they predate Hold and the Grain
-Core and are not evidence for v0.2.0.
+The exact `v0.2.0-rc.1` artifacts are staged in a private, unpublished GitHub
+draft with verified SHA-256 read-back. They are ad-hoc/unsigned engineering
+artifacts and must not be sold or publicly published.
 
 Time-stretch, presets/performance banks, feedback, random scatter/modulation,
 waveform UI, credential-tested production signing/notarization, store work, and

@@ -9,7 +9,10 @@ Tags `v0.1.0` and `v0.1.1-rc.1` already exist and are immutable history. The
 older `v0.1.1-rc.1` tag points to commit `561aaf8`; its associated GitHub
 Release remains a private, unpublished draft candidate that predates Hold
 Length and the Grain Core. Do not move, delete, reuse, or force-push either
-tag. A future candidate must use the next verified-unused `v0.2.0-rc.N` tag
+tag. An unpublished manual draft now reserves `v0.2.0-rc.1` for the unsigned
+engineering candidate built from `4b7eeee`; it has no Git tag and must not be
+mistaken for a workflow-produced signed candidate. A future automated
+candidate must use the next verified-unused `v0.2.0-rc.N` tag
 after all pre-tag gates pass.
 
 ## What the workflow does
@@ -67,8 +70,8 @@ Do not recreate or move `v0.1.1-rc.1`. Before creating any `v0.2.0` candidate:
    `sign_artifacts=true`.
 6. Require verified `mac_signed=yes`, `mac_notarized=yes`, and `win_signed=yes`
    results, then independently inspect the downloaded artifacts.
-7. Choose the next candidate name matching `v0.2.0-rc.*`, such as
-   `v0.2.0-rc.1`, only after confirming that no local tag, remote tag, or
+7. Choose the next candidate name matching `v0.2.0-rc.*`, beginning with
+   `v0.2.0-rc.2`, only after confirming that no local tag, remote tag, or
    GitHub release already uses it.
 8. Obtain a separate explicit approval to annotate the exact verified `main`
    commit and push only that new tag.
@@ -85,8 +88,9 @@ If a candidate is abandoned, document it and use a new tag.
 
        shasum -a 256 -c SHA256SUMS.txt
 
-4. Inspect both archives. Require one expected root, README, LICENSE, and the
-   exact plugin bundles. On macOS, independently verify both architectures,
+4. Inspect both archives. Require one expected root, README, LICENSE,
+   THIRD_PARTY_NOTICES.md, and the exact plugin bundles. On macOS,
+   independently verify both architectures,
    every slice's minimum OS, Developer ID signatures, and stapled tickets.
 5. Run the DAW checklist in `docs/BUILD_AND_TEST.md` on the exact extracted
    assets. Record commit/tag, hashes, host/OS/format versions, sample rate,
@@ -104,7 +108,8 @@ musical/sound-quality approval.
 
 Repository-authored source is offered under the MIT License. Builds incorporate
 JUCE 8.0.15, which JUCE separately offers under AGPLv3 or its commercial JUCE 8
-licence. No distribution basis is currently recorded for Granular Freeze. Do
+licence. The owner has explicitly declined the Starter tier. No alternative
+distribution basis is currently recorded for Granular Freeze. Do
 not publish or sell production binaries until the owner selects and verifies
 one reviewed route for the exact release:
 

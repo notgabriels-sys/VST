@@ -2,11 +2,12 @@
 
 ## Verification boundary
 
-**Implemented and automatically tested. Not yet evaluated by Gabriel in Ableton
-Live or Bitwig. It is not released. No commercial validation.** Local build, offline
-tests, and renderer output prove implementation/file structure only. They do
-not prove musical quality, practical CPU use, a DAW result, remote macOS/Windows
-CI, signing/notarization, release readiness, or commercial validation.
+**Implemented and automatically tested. Exact v0.2.0 host loading is confirmed
+in Ableton Live 12 and Bitwig Studio, but auditory QA and session recall were
+waived rather than passed. It is not publicly released and has no commercial
+validation.** Local builds, tests, renderer output, and host loading do not
+prove musical quality, practical CPU use, recall, signing/notarization,
+release readiness, or commercial validation.
 
 ## Prerequisites
 
@@ -304,11 +305,12 @@ For the v0.2 human listening gate, also:
 - Use disparate stereo material and assess stereo stability and practical CPU
   use in a realistic live set.
 
-The exact older `v0.1.1-rc.1` private-draft AU/VST3 assets passed a limited
-Ableton Live 12.4.2 functional smoke test at 48 kHz. They predate Hold and the
-Grain Core and therefore do not validate v0.2.0. No human DAW result exists for
-the current implementation. Do not infer compatibility, quality, CPU, release,
-or commercial claims from automated checks.
+The exact v0.2.0 VST3 was discovered and instantiated in Ableton Live 12 and
+Bitwig Studio; the Ableton editor opened and both hosts remained operational.
+This confirms host loading only. Manual auditory QA, practical CPU assessment,
+automation behavior, and session recall were waived and remain unverified.
+Do not infer musical quality, recall, release, or commercial claims from these
+checks.
 Do not mark the candidate validated until this has been performed by ear. See
 `docs/RELEASE.md` for the complete release gate.
 
