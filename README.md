@@ -51,7 +51,7 @@ exposes Freeze, Pitch, Position, Size, Density, Hold, and Crossfade.
 The offline GranularFreezeEngineTests and GranularFreezeTests executables need
 no host/device. GranularFreezeRender writes fifteen controlled Freeze cases
 plus dry-reference.wav: exactly sixteen stereo 48 kHz/24-bit WAV listening
-aids. The current `main` commit
+aids. On 2026-08-23, `main` commit
 [`3ccb569`](https://github.com/notgabriels-sys/VST/actions/runs/32673112054)
 completed the macOS and Windows CI matrix, including both test binaries,
 packaging, and artifact upload. The downloaded artifacts passed archive
