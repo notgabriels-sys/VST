@@ -61,11 +61,9 @@ if (Test-Path -LiteralPath $outputZip -PathType Leaf) {
 
 New-Item -ItemType Directory -Path $stagingDirectory | Out-Null
 Copy-Item -LiteralPath $bundle.FullName -Destination (Join-Path $stagingDirectory 'GranularFreeze.vst3') -Recurse
-$clapBundles = @(Get-ChildItem -LiteralPath $buildRoot -Directory -Filter 'GranularFreeze.clap' -Recurse)
-if ($clapBundles.Count -ne 1) { Fail "expected exactly one GranularFreeze.clap directory; found $($clapBundles.Count)" }
-$clapBinary = Join-Path $clapBundles[0].FullName 'Contents/x86_64-win/GranularFreeze.clap'
-if (-not (Test-Path -LiteralPath $clapBinary -PathType Leaf)) { Fail "expected Windows CLAP binary is missing: $clapBinary" }
-Copy-Item -LiteralPath $clapBundles[0].FullName -Destination (Join-Path $stagingDirectory 'GranularFreeze.clap') -Recurse
+$clapBinaries = @(Get-ChildItem -LiteralPath $buildRoot -File -Filter 'GranularFreeze.clap' -Recurse)
+if ($clapBinaries.Count -ne 1) { Fail "expected exactly one GranularFreeze.clap file; found $($clapBinaries.Count)" }
+Copy-Item -LiteralPath $clapBinaries[0].FullName -Destination (Join-Path $stagingDirectory 'GranularFreeze.clap')
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'README.md') -Destination (Join-Path $stagingDirectory 'README.md')
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'LICENSE') -Destination (Join-Path $stagingDirectory 'LICENSE')
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'THIRD_PARTY_NOTICES.md') -Destination (Join-Path $stagingDirectory 'THIRD_PARTY_NOTICES.md')
@@ -97,7 +95,7 @@ foreach ($requiredEntry in @(
     "$archiveRoot/LICENSE",
     "$archiveRoot/THIRD_PARTY_NOTICES.md",
     "$archiveRoot/GranularFreeze.vst3/Contents/x86_64-win/GranularFreeze.vst3",
-    "$archiveRoot/GranularFreeze.clap/Contents/x86_64-win/GranularFreeze.clap"
+    "$archiveRoot/GranularFreeze.clap"
 )) {
     if ($archiveEntries -notcontains $requiredEntry) {
         Fail "archive is missing required entry: $requiredEntry"
