@@ -1,19 +1,10 @@
-# Offline harness that drives the processor directly (no host, no audio device),
-# so the freeze/crossfade/pitch behaviour can be asserted in CI.
-add_executable(GranularFreezeTests PluginTests.cpp)
-
-target_link_libraries(GranularFreezeTests PRIVATE
-  "$<LINK_ONLY:GranularFreeze>"
-  juce::juce_audio_processors)
-add_test(NAME GranularFreezeBehavior COMMAND GranularFreezeTests)
-
-add_executable(GranularFreezeEngineTests GrainEngineTests.cpp)
-target_link_libraries(GranularFreezeEngineTests PRIVATE
-  "$<LINK_ONLY:GranularFreeze>"
-  juce::juce_audio_processors)
+add_executable(GranularFreezeEngineTests GrainEngineCoreTests.cpp)
+target_link_libraries(GranularFreezeEngineTests PRIVATE GranularFreezeCore)
 add_test(NAME GranularFreezeEngine COMMAND GranularFreezeEngineTests)
-
-# Renders demo audio + objective measurements. Not run in CI; a listening aid.
-add_executable(GranularFreezeRender RenderDemo.cpp)
-target_link_libraries(GranularFreezeRender PRIVATE
-  "$<LINK_ONLY:GranularFreeze>" juce::juce_audio_processors juce::juce_audio_formats)
+add_executable(GranularFreezeCoreTests GranularFreezeCoreTests.cpp)
+target_link_libraries(GranularFreezeCoreTests PRIVATE GranularFreezeCore)
+add_test(NAME GranularFreezeCore COMMAND GranularFreezeCoreTests)
+add_executable(GranularFreezeContractTests PluginContractTests.cpp)
+target_include_directories(GranularFreezeContractTests PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_compile_features(GranularFreezeContractTests PRIVATE cxx_std_17)
+add_test(NAME GranularFreezeContract COMMAND GranularFreezeContractTests)

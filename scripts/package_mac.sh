@@ -31,7 +31,7 @@ fi
 output_parent=$(dirname "$output_zip")
 [[ -d "$output_parent" ]] || die "output directory does not exist: $output_parent"
 
-for document in README.md LICENSE; do
+for document in README.md LICENSE THIRD_PARTY_NOTICES.md; do
   [[ -f "$repository_root/$document" ]] || die "required document is missing: $repository_root/$document"
 done
 
@@ -43,19 +43,25 @@ rm -f "$output_zip"
 vst3_bundles=()
 while IFS= read -r -d '' bundle; do
   vst3_bundles+=("$bundle")
-done < <(find "$build_directory" -type d -name 'Granular Freeze.vst3' -print0)
+done < <(find "$build_directory" -type d -name 'GranularFreeze.vst3' -print0)
 
 component_bundles=()
 while IFS= read -r -d '' bundle; do
   component_bundles+=("$bundle")
-done < <(find "$build_directory" -type d -name 'Granular Freeze.component' -print0)
+done < <(find "$build_directory" -type d -name 'GranularFreeze.component' -print0)
 
-[[ ${#vst3_bundles[@]} -eq 1 ]] || die "expected exactly one outer Granular Freeze.vst3 directory; found ${#vst3_bundles[@]}"
-[[ ${#component_bundles[@]} -eq 1 ]] || die "expected exactly one outer Granular Freeze.component directory; found ${#component_bundles[@]}"
+clap_bundles=()
+while IFS= read -r -d '' bundle; do
+  clap_bundles+=("$bundle")
+done < <(find "$build_directory" -type d -name 'GranularFreeze.clap' -print0)
+
+[[ ${#vst3_bundles[@]} -eq 1 ]] || die "expected exactly one GranularFreeze.vst3 directory; found ${#vst3_bundles[@]}"
+[[ ${#component_bundles[@]} -eq 1 ]] || die "expected exactly one GranularFreeze.component directory; found ${#component_bundles[@]}"
+[[ ${#clap_bundles[@]} -eq 1 ]] || die "expected exactly one GranularFreeze.clap directory; found ${#clap_bundles[@]}"
 
 verify_bundle() {
   local bundle=$1
-  local binary="$bundle/Contents/MacOS/Granular Freeze"
+  local binary="$bundle/Contents/MacOS/GranularFreeze"
   local architectures normalized_architectures minos arch
   local -a parsed_architectures=()
 
@@ -82,14 +88,14 @@ verify_signature() {
 # Validate immutable bundle properties before mutating either signature. A
 # wrong-architecture build must fail as a pure preflight rather than leave one
 # bundle re-signed and the other untouched.
-for bundle in "${vst3_bundles[@]}" "${component_bundles[@]}"; do
+for bundle in "${vst3_bundles[@]}" "${component_bundles[@]}" "${clap_bundles[@]}"; do
   verify_bundle "$bundle"
 done
 
 # Unsigned engineering candidates receive a valid ad-hoc bundle seal. A
 # Developer ID workflow passes --preserve-signature so packaging cannot replace
 # the production signature (or a stapled notarization ticket) with an ad-hoc one.
-for bundle in "${vst3_bundles[@]}" "${component_bundles[@]}"; do
+for bundle in "${vst3_bundles[@]}" "${component_bundles[@]}" "${clap_bundles[@]}"; do
   if [[ $preserve_signature == false ]]; then
     codesign --force --deep --sign - "$bundle"
   fi
@@ -97,12 +103,14 @@ for bundle in "${vst3_bundles[@]}" "${component_bundles[@]}"; do
 done
 
 mkdir -p "$staging_directory"
-ditto "${vst3_bundles[0]}" "$staging_directory/Granular Freeze.vst3"
-ditto "${component_bundles[0]}" "$staging_directory/Granular Freeze.component"
+ditto "${vst3_bundles[0]}" "$staging_directory/GranularFreeze.vst3"
+ditto "${component_bundles[0]}" "$staging_directory/GranularFreeze.component"
+ditto "${clap_bundles[0]}" "$staging_directory/GranularFreeze.clap"
 ditto "$repository_root/README.md" "$staging_directory/README.md"
 ditto "$repository_root/LICENSE" "$staging_directory/LICENSE"
+ditto "$repository_root/THIRD_PARTY_NOTICES.md" "$staging_directory/THIRD_PARTY_NOTICES.md"
 
-for bundle in "$staging_directory/Granular Freeze.vst3" "$staging_directory/Granular Freeze.component"; do
+for bundle in "$staging_directory/GranularFreeze.vst3" "$staging_directory/GranularFreeze.component" "$staging_directory/GranularFreeze.clap"; do
   verify_signature "$bundle"
   verify_bundle "$bundle"
 done
@@ -134,8 +142,10 @@ done <<< "$archive_entries"
 for required_entry in \
   "$archive_root/README.md" \
   "$archive_root/LICENSE" \
-  "$archive_root/Granular Freeze.vst3/Contents/MacOS/Granular Freeze" \
-  "$archive_root/Granular Freeze.component/Contents/MacOS/Granular Freeze"; do
+  "$archive_root/THIRD_PARTY_NOTICES.md" \
+  "$archive_root/GranularFreeze.vst3/Contents/MacOS/GranularFreeze" \
+  "$archive_root/GranularFreeze.component/Contents/MacOS/GranularFreeze" \
+  "$archive_root/GranularFreeze.clap/Contents/MacOS/GranularFreeze"; do
   grep -Fxq "$required_entry" <<< "$archive_entries" || die "archive is missing required entry: $required_entry"
 done
 
@@ -150,8 +160,9 @@ cleanup_verification() {
 trap cleanup_verification EXIT
 ditto -x -k "$output_zip" "$verification_directory"
 for bundle in \
-  "$verification_directory/$archive_root/Granular Freeze.vst3" \
-  "$verification_directory/$archive_root/Granular Freeze.component"; do
+  "$verification_directory/$archive_root/GranularFreeze.vst3" \
+  "$verification_directory/$archive_root/GranularFreeze.component" \
+  "$verification_directory/$archive_root/GranularFreeze.clap"; do
   [[ -d "$bundle" ]] || die "archive extraction is missing expected bundle: $bundle"
   verify_signature "$bundle"
   verify_bundle "$bundle"

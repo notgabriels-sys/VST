@@ -22,7 +22,7 @@ if (-not (Test-Path -LiteralPath $BuildDirectory -PathType Container)) {
 
 $buildRoot = (Resolve-Path -LiteralPath $BuildDirectory).Path
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
-foreach ($document in @('README.md', 'LICENSE')) {
+foreach ($document in @('README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md')) {
     $documentPath = Join-Path $repositoryRoot $document
     if (-not (Test-Path -LiteralPath $documentPath -PathType Leaf)) {
         Fail "required document is missing: $documentPath"
@@ -38,14 +38,14 @@ if (Test-Path -LiteralPath $stagingDirectory) {
 # Select a bundle directory only. The inner Windows binary also ends in .vst3,
 # so extension-only recursive matching is deliberately forbidden here.
 $bundles = @(
-    Get-ChildItem -LiteralPath $buildRoot -Directory -Filter 'Granular Freeze.vst3' -Recurse
+    Get-ChildItem -LiteralPath $buildRoot -Directory -Filter 'GranularFreeze.vst3' -Recurse
 )
 if ($bundles.Count -ne 1) {
-    Fail "expected exactly one outer Granular Freeze.vst3 directory; found $($bundles.Count)"
+    Fail "expected exactly one GranularFreeze.vst3 directory; found $($bundles.Count)"
 }
 
 $bundle = $bundles[0]
-$innerBinary = Join-Path $bundle.FullName 'Contents/x86_64-win/Granular Freeze.vst3'
+$innerBinary = Join-Path $bundle.FullName 'Contents/x86_64-win/GranularFreeze.vst3'
 if (-not (Test-Path -LiteralPath $innerBinary -PathType Leaf)) {
     Fail "expected Windows VST3 binary is missing: $innerBinary"
 }
@@ -60,9 +60,13 @@ if (Test-Path -LiteralPath $outputZip -PathType Leaf) {
 }
 
 New-Item -ItemType Directory -Path $stagingDirectory | Out-Null
-Copy-Item -LiteralPath $bundle.FullName -Destination (Join-Path $stagingDirectory 'Granular Freeze.vst3') -Recurse
+Copy-Item -LiteralPath $bundle.FullName -Destination (Join-Path $stagingDirectory 'GranularFreeze.vst3') -Recurse
+$clapBinaries = @(Get-ChildItem -LiteralPath $buildRoot -File -Filter 'GranularFreeze.clap' -Recurse)
+if ($clapBinaries.Count -ne 1) { Fail "expected exactly one GranularFreeze.clap file; found $($clapBinaries.Count)" }
+Copy-Item -LiteralPath $clapBinaries[0].FullName -Destination (Join-Path $stagingDirectory 'GranularFreeze.clap')
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'README.md') -Destination (Join-Path $stagingDirectory 'README.md')
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'LICENSE') -Destination (Join-Path $stagingDirectory 'LICENSE')
+Copy-Item -LiteralPath (Join-Path $repositoryRoot 'THIRD_PARTY_NOTICES.md') -Destination (Join-Path $stagingDirectory 'THIRD_PARTY_NOTICES.md')
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 [System.IO.Compression.ZipFile]::CreateFromDirectory(
@@ -89,7 +93,9 @@ foreach ($entry in $archiveEntries) {
 foreach ($requiredEntry in @(
     "$archiveRoot/README.md",
     "$archiveRoot/LICENSE",
-    "$archiveRoot/Granular Freeze.vst3/Contents/x86_64-win/Granular Freeze.vst3"
+    "$archiveRoot/THIRD_PARTY_NOTICES.md",
+    "$archiveRoot/GranularFreeze.vst3/Contents/x86_64-win/GranularFreeze.vst3",
+    "$archiveRoot/GranularFreeze.clap"
 )) {
     if ($archiveEntries -notcontains $requiredEntry) {
         Fail "archive is missing required entry: $requiredEntry"

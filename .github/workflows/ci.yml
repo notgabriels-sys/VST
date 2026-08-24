@@ -34,12 +34,25 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ matrix.platform }}" = "macos" ]; then
-            cmake -S . -B build -G Xcode \
+            cmake -S . -B build \
               '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64' \
               -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
           else
             cmake -S . -B build
           fi
+
+      - name: Verify pinned Khronos headers
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $glext = Get-Item build/_deps/dpf-src/khronos/GL/glext.h
+          $khrplatform = Get-Item build/_deps/dpf-src/khronos/KHR/khrplatform.h
+          if ($glext.Length -eq 0 -or $khrplatform.Length -eq 0) {
+            throw 'Pinned Khronos header is empty.'
+          }
+          if (-not (Select-String -Quiet -Path $glext.FullName -Pattern 'PFNGLACTIVETEXTUREPROC')) {
+            throw 'Pinned glext.h is missing required OpenGL declarations.'
+          }
 
       - name: Build
         shell: bash
@@ -49,7 +62,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for name in GranularFreezeEngineTests GranularFreezeTests; do
+          for name in GranularFreezeEngineTests GranularFreezeCoreTests GranularFreezeContractTests; do
             test_binary=$(find build -type f \( -name "$name" -o -name "$name.exe" \) -print -quit)
             if [ -z "$test_binary" ]; then
               echo "$name binary not found under build/" >&2
