@@ -34,7 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ matrix.platform }}" = "macos" ]; then
-            cmake -S . -B build -G Xcode \
+            cmake -S . -B build \
               '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64' \
               -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
           else
@@ -49,7 +49,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for name in GranularFreezeEngineTests GranularFreezeTests; do
+          for name in GranularFreezeEngineTests GranularFreezeCoreTests GranularFreezeContractTests; do
             test_binary=$(find build -type f \( -name "$name" -o -name "$name.exe" \) -print -quit)
             if [ -z "$test_binary" ]; then
               echo "$name binary not found under build/" >&2

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <vector>
 
 namespace
@@ -59,6 +60,38 @@ int main()
     values.freeze = 0.0f;
     core.process(inputs, outputs, 8, values);
     check(near(outLeft.back(), 0.0f), "core: unfreeze returns to current live input");
+
+    gf::GranularFreezeCore oversized;
+    oversized.prepare(48000.0, 64);
+    std::vector<float> largeLeft(4097), largeRight(4097), largeOutLeft(4097), largeOutRight(4097);
+    for (std::size_t i = 0; i < largeLeft.size(); ++i)
+    {
+        largeLeft[i] = static_cast<float>(std::sin(i * 0.013));
+        largeRight[i] = -0.25f * largeLeft[i];
+    }
+    const float* largeInputs[] { largeLeft.data(), largeRight.data() };
+    float* largeOutputs[] { largeOutLeft.data(), largeOutRight.data() };
+    oversized.process(largeInputs, largeOutputs, static_cast<std::uint32_t>(largeLeft.size()), {});
+    check(std::equal(largeLeft.begin(), largeLeft.end(), largeOutLeft.begin()),
+          "core: oversized live block is chunked transparently");
+    check(std::equal(largeRight.begin(), largeRight.end(), largeOutRight.begin()),
+          "core: oversized stereo timeline is not advanced per channel");
+
+    gf::ParameterValues invalid;
+    invalid.freeze = 1.0f;
+    invalid.pitch = std::numeric_limits<float>::quiet_NaN();
+    invalid.crossfadeMs = std::numeric_limits<float>::infinity();
+    invalid.holdMs = -std::numeric_limits<float>::infinity();
+    invalid.grainSizeMs = std::numeric_limits<float>::quiet_NaN();
+    invalid.densityHz = std::numeric_limits<float>::infinity();
+    invalid.position = -std::numeric_limits<float>::infinity();
+    std::fill(largeLeft.begin(), largeLeft.end(), 0.0f);
+    std::fill(largeRight.begin(), largeRight.end(), 0.0f);
+    oversized.process(largeInputs, largeOutputs, static_cast<std::uint32_t>(largeLeft.size()), invalid);
+    bool invalidFinite = true;
+    for (std::size_t i = 0; i < largeOutLeft.size(); ++i)
+        invalidFinite = invalidFinite && std::isfinite(largeOutLeft[i]) && std::isfinite(largeOutRight[i]);
+    check(invalidFinite, "core: non-finite parameter block produces finite output");
 
     return failures == 0 ? 0 : 1;
 }
