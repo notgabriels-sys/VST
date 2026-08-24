@@ -22,7 +22,7 @@ if (-not (Test-Path -LiteralPath $BuildDirectory -PathType Container)) {
 
 $buildRoot = (Resolve-Path -LiteralPath $BuildDirectory).Path
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
-foreach ($document in @('README.md', 'LICENSE')) {
+foreach ($document in @('README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md')) {
     $documentPath = Join-Path $repositoryRoot $document
     if (-not (Test-Path -LiteralPath $documentPath -PathType Leaf)) {
         Fail "required document is missing: $documentPath"
@@ -63,6 +63,7 @@ New-Item -ItemType Directory -Path $stagingDirectory | Out-Null
 Copy-Item -LiteralPath $bundle.FullName -Destination (Join-Path $stagingDirectory 'Granular Freeze.vst3') -Recurse
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'README.md') -Destination (Join-Path $stagingDirectory 'README.md')
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'LICENSE') -Destination (Join-Path $stagingDirectory 'LICENSE')
+Copy-Item -LiteralPath (Join-Path $repositoryRoot 'THIRD_PARTY_NOTICES.md') -Destination (Join-Path $stagingDirectory 'THIRD_PARTY_NOTICES.md')
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 [System.IO.Compression.ZipFile]::CreateFromDirectory(
@@ -89,6 +90,7 @@ foreach ($entry in $archiveEntries) {
 foreach ($requiredEntry in @(
     "$archiveRoot/README.md",
     "$archiveRoot/LICENSE",
+    "$archiveRoot/THIRD_PARTY_NOTICES.md",
     "$archiveRoot/Granular Freeze.vst3/Contents/x86_64-win/Granular Freeze.vst3"
 )) {
     if ($archiveEntries -notcontains $requiredEntry) {

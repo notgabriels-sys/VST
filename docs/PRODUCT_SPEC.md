@@ -2,11 +2,12 @@
 
 ## Status
 
-**Implemented and automatically tested. Not yet evaluated by Gabriel in Ableton
-Live or Bitwig. It is not released. No commercial validation.** This is a factual
-implementation scope, not a price, schedule, sales-channel, compatibility, or
-musical-quality claim. Renderer diagnostics and WAV structure are not proof of
-quality.
+**Implemented and automatically tested. Exact v0.2.0 host loading is confirmed
+in Ableton Live 12 and Bitwig Studio; auditory QA and session recall were
+waived, not passed. It is not publicly released and has no commercial
+validation.** This is a factual implementation scope, not a price, schedule,
+sales-channel, broad compatibility, or musical-quality claim. Renderer
+diagnostics and host loading are not proof of quality.
 
 ## Implemented behavior
 

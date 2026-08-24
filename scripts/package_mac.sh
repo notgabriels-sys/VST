@@ -31,7 +31,7 @@ fi
 output_parent=$(dirname "$output_zip")
 [[ -d "$output_parent" ]] || die "output directory does not exist: $output_parent"
 
-for document in README.md LICENSE; do
+for document in README.md LICENSE THIRD_PARTY_NOTICES.md; do
   [[ -f "$repository_root/$document" ]] || die "required document is missing: $repository_root/$document"
 done
 
@@ -101,6 +101,7 @@ ditto "${vst3_bundles[0]}" "$staging_directory/Granular Freeze.vst3"
 ditto "${component_bundles[0]}" "$staging_directory/Granular Freeze.component"
 ditto "$repository_root/README.md" "$staging_directory/README.md"
 ditto "$repository_root/LICENSE" "$staging_directory/LICENSE"
+ditto "$repository_root/THIRD_PARTY_NOTICES.md" "$staging_directory/THIRD_PARTY_NOTICES.md"
 
 for bundle in "$staging_directory/Granular Freeze.vst3" "$staging_directory/Granular Freeze.component"; do
   verify_signature "$bundle"
@@ -134,6 +135,7 @@ done <<< "$archive_entries"
 for required_entry in \
   "$archive_root/README.md" \
   "$archive_root/LICENSE" \
+  "$archive_root/THIRD_PARTY_NOTICES.md" \
   "$archive_root/Granular Freeze.vst3/Contents/MacOS/Granular Freeze" \
   "$archive_root/Granular Freeze.component/Contents/MacOS/Granular Freeze"; do
   grep -Fxq "$required_entry" <<< "$archive_entries" || die "archive is missing required entry: $required_entry"

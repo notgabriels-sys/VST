@@ -19,13 +19,14 @@ else()
   message(STATUS "JUCE not provided; fetching JUCE via FetchContent (this may increase CI time)")
   FetchContent_Declare(
     juce
-    GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
     # JUCE 7.0.4 fails to build against the macOS 15+ SDK: it calls
     # CGWindowListCreateImage unconditionally, which that SDK marks as
     # unavailable (a hard error, not a warning). 8.x guards the call behind a
-    # ScreenCaptureKit branch, so it compiles on current runners.
-    GIT_TAG 8.0.15
-    GIT_SHALLOW TRUE
+    # ScreenCaptureKit branch, so it compiles on current runners. Fetch the
+    # release archive by content hash rather than trusting the movable Git tag.
+    URL https://github.com/juce-framework/JUCE/archive/refs/tags/8.0.15.tar.gz
+    URL_HASH SHA256=0eafd736286c6e7bb6958d79fce18d42cb654b8e231890d327b7cece379bd156
+    DOWNLOAD_EXTRACT_TIMESTAMP FALSE
   )
   FetchContent_MakeAvailable(juce)
 endif()
