@@ -49,7 +49,16 @@
 - [x] Two offline test binaries and the sixteen-file renderer listening set.
 - [x] CI workflow configured for both offline suites on pinned macOS and
       Windows runners, with strict platform packaging and artifact failure
-      gates. Remote execution remains unverified for this merge.
+      gates.
+- [x] `main` commit
+      [`3ccb569`](https://github.com/notgabriels-sys/VST/actions/runs/32673112054)
+      completed both CI jobs on 2026-08-23. Both jobs built, ran both offline
+      suites, packaged, and uploaded artifacts. The downloaded macOS and
+      Windows ZIPs passed archive-integrity and expected-payload checks on
+      2026-08-24; the macOS bundles have valid ad-hoc seals, universal
+      arm64/x86_64 binaries, and a macOS 12.0 minimum target. This is
+      main-line evidence only, not a tagged-candidate, production-signing, or
+      DAW-validation result.
 - [x] Fail-closed conditional signing/notarization workflow and
       signature-preserving packaging implemented; no credential-dependent run
       has completed.

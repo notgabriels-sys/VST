@@ -51,8 +51,14 @@ exposes Freeze, Pitch, Position, Size, Density, Hold, and Crossfade.
 The offline GranularFreezeEngineTests and GranularFreezeTests executables need
 no host/device. GranularFreezeRender writes fifteen controlled Freeze cases
 plus dry-reference.wav: exactly sixteen stereo 48 kHz/24-bit WAV listening
-aids. The CI workflow is configured to run both binaries on macOS and Windows;
-a local run is not remote-CI or DAW-listening evidence.
+aids. The current `main` commit
+[`3ccb569`](https://github.com/notgabriels-sys/VST/actions/runs/32673112054)
+completed the macOS and Windows CI matrix, including both test binaries,
+packaging, and artifact upload. The downloaded artifacts passed archive
+integrity and expected-payload checks; the macOS AU and VST3 also have valid
+ad-hoc seals, universal arm64/x86_64 binaries, and a macOS 12.0 minimum
+deployment target. This is main-line engineering evidence, not tagged-candidate
+or DAW-listening evidence.
 
 The hardened candidate path uses pinned macOS and Windows runners, a universal
 macOS 12 build, strict archive scripts, fail-closed conditional signing and
