@@ -76,6 +76,17 @@ DPF printed TODO messages for unsupported AU selectors/properties, and auval
 warned that recommended latency, tail-time, and bypass properties are absent.
 These warnings were not hidden; auval still passed every required section.
 
+## Windows CI compatibility
+
+GitHub's Windows runner demonstrated that DPF's unchecked download can produce
+a zero-byte `glext.h` while configuration still succeeds. Before DGL is added,
+the project now downloads `glext.h` and `khrplatform.h` from immutable commits
+in the official Khronos OpenGL/EGL registries with TLS verification and exact
+SHA-256 checks. A failed, empty, or changed transfer is therefore a configure
+error rather than a later opaque compiler failure.
+DPF then uses its native OpenGL extension loader; no GLEW or runtime DLL is
+added.
+
 ## Remaining gates
 
 - macOS and Windows GitHub Actions on the final commit

@@ -83,6 +83,19 @@ jobs:
             cmake -S . -B build
           fi
 
+      - name: Verify pinned Khronos headers
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $glext = Get-Item build/_deps/dpf-src/khronos/GL/glext.h
+          $khrplatform = Get-Item build/_deps/dpf-src/khronos/KHR/khrplatform.h
+          if ($glext.Length -eq 0 -or $khrplatform.Length -eq 0) {
+            throw 'Pinned Khronos header is empty.'
+          }
+          if (-not (Select-String -Quiet -Path $glext.FullName -Pattern 'PFNGLACTIVETEXTUREPROC')) {
+            throw 'Pinned glext.h is missing required OpenGL declarations.'
+          }
+
       - name: Build
         shell: bash
         run: cmake --build build --config Release --parallel
