@@ -11,7 +11,7 @@ namespace gf
 // editor. The audio thread publishes fixed-size values; the editor only reads
 // them during its idle callback. It is not part of the host parameter contract.
 constexpr std::size_t visualVoiceCount = 8;
-constexpr std::size_t spectrumBandCount = 24;
+constexpr std::size_t spectrumBandCount = 48;
 
 struct GranularFreezeTelemetry
 {

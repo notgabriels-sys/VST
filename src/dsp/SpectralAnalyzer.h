@@ -9,7 +9,7 @@ namespace gf
 class SpectralAnalyzer
 {
 public:
-    static constexpr std::size_t bandCount = 24;
+    static constexpr std::size_t bandCount = 48;
 
     void prepare(double sampleRate) noexcept;
     void reset() noexcept;
@@ -21,7 +21,7 @@ public:
     }
 
 private:
-    static constexpr std::uint32_t analysisWindow = 256;
+    static constexpr std::uint32_t analysisWindow = 128;
 
     std::array<float, bandCount> coefficients {};
     std::array<float, bandCount> stateOne {};

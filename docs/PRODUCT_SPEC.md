@@ -33,14 +33,23 @@ The plug-in is a stereo effect with no MIDI. Targets are VST3/CLAP on macOS and
 Windows and AU on macOS. Product version is 0.2.0; CLAP ID is
 `com.gabrielgarciaalonso.granularfreeze`; DPF IDs are `GF01`/`GFZP`.
 
+## Visual treatment
+
+The editor shell follows the companion website's graphite language: flat near-
+black panels, thin neutral hairlines, quiet typography, and restrained corner
+radii. The three selectable palettes stay close to grayscale, with roughly 20%
+saturation in their atmosphere accents. Saturated contrast is reserved for the
+signal display and state meters; the shell has no decorative grain, texture, or
+gloss treatment.
+
 ## Editor telemetry
 
 The editor reserves one wide horizontal screen as its only animated surface. The
 DSP publishes bounded atomic telemetry after each processed block: scheduler
 phase, launch count, active voice count, up to eight active Hann-envelope phases,
-and a fixed 24-band spectral readout of the processed signal. The UI uses that
-data for the quiet spectral contour, moving grain points, and thin scheduler
-playhead. This is a visual-only bridge; it does not change the seven-parameter
+and a fixed 48-band spectral readout of the processed signal. The current
+reference UI uses that data for a coherent spectral ribbon, independent peak
+ticks, and a thin scheduler reference line. This is a visual-only bridge; it does not change the seven-parameter
 host contract and does not introduce an independent sequencer or modulation
 source. If no DSP instance is available, the screen remains still.
 

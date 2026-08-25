@@ -17,9 +17,7 @@ struct ThemePalette
 {
     Color backgroundTop;
     Color backgroundBottom;
-    Color ambient;
     Color bodyTop;
-    Color bodyBottom;
     Color surfaceTop;
     Color surfaceBottom;
     Color surfaceLiftedTop;
@@ -31,7 +29,6 @@ struct ThemePalette
     Color accentDim;
     Color hairline;
     Color track;
-    Color texture;
 };
 
 // The palettes are intentionally quiet: color changes the atmosphere, while
@@ -39,31 +36,31 @@ struct ThemePalette
 // options, and the three small header swatches select one directly.
 const ThemePalette themePalettes[] = {
     {
-        Color(14, 16, 20), Color(7, 9, 12), Color(166, 198, 177),
-        Color(24, 28, 33), Color(11, 14, 18),
-        Color(36, 40, 46), Color(17, 20, 24),
-        Color(48, 54, 59), Color(25, 29, 34),
-        Color(236, 232, 223), Color(143, 143, 139), Color(91, 94, 95),
-        Color(181, 208, 190), Color(78, 104, 89), Color(47, 49, 53),
-        Color(37, 39, 43), Color(118, 129, 128)
+        Color(15, 16, 17), Color(15, 16, 17),
+        Color(18, 19, 21),
+        Color(22, 23, 25), Color(22, 23, 25),
+        Color(27, 28, 30), Color(27, 28, 30),
+        Color(233, 234, 236), Color(160, 164, 171), Color(106, 110, 116),
+        Color(201, 207, 214), Color(88, 92, 98), Color(46, 47, 51),
+        Color(31, 32, 35)
     },
     {
-        Color(20, 15, 14), Color(9, 8, 9), Color(207, 145, 102),
-        Color(34, 27, 25), Color(15, 11, 12),
-        Color(48, 37, 33), Color(22, 17, 18),
-        Color(61, 46, 39), Color(30, 22, 23),
-        Color(241, 230, 218), Color(164, 145, 133), Color(104, 91, 85),
-        Color(218, 169, 127), Color(128, 83, 59), Color(67, 50, 45),
-        Color(48, 36, 34), Color(139, 111, 99)
+        Color(18, 17, 16), Color(18, 17, 16),
+        Color(21, 20, 19),
+        Color(25, 24, 23), Color(25, 24, 23),
+        Color(29, 28, 27), Color(29, 28, 27),
+        Color(237, 234, 230), Color(165, 160, 157), Color(111, 106, 104),
+        Color(204, 196, 190), Color(109, 102, 99), Color(51, 49, 48),
+        Color(34, 32, 31)
     },
     {
-        Color(15, 15, 23), Color(8, 8, 13), Color(171, 153, 216),
-        Color(25, 24, 35), Color(11, 10, 18),
-        Color(38, 36, 51), Color(18, 17, 27),
-        Color(50, 46, 65), Color(25, 23, 37),
-        Color(235, 231, 244), Color(153, 149, 171), Color(94, 91, 112),
-        Color(188, 174, 229), Color(103, 87, 143), Color(50, 48, 66),
-        Color(39, 37, 54), Color(119, 111, 143)
+        Color(16, 16, 19), Color(16, 16, 19),
+        Color(19, 19, 22),
+        Color(24, 24, 28), Color(24, 24, 28),
+        Color(29, 28, 33), Color(29, 28, 33),
+        Color(234, 233, 239), Color(159, 158, 170), Color(107, 106, 117),
+        Color(202, 199, 214), Color(107, 103, 122), Color(48, 47, 55),
+        Color(32, 31, 37)
     }
 };
 
@@ -160,10 +157,13 @@ protected:
                 const float nextLevel = std::clamp(telemetry.spectrumLevels[i].load(
                     std::memory_order_relaxed), 0.0f, 1.0f);
                 const float smoothed = spectrumLevels[i]
-                    + (nextLevel - spectrumLevels[i]) * 0.26f;
+                    + (nextLevel - spectrumLevels[i]) * 0.34f;
+                const float peak = std::max(smoothed, spectrumPeaks[i] * 0.972f);
                 spectrumChanged = spectrumChanged
-                    || std::abs(smoothed - spectrumLevels[i]) > 0.001f;
+                    || std::abs(smoothed - spectrumLevels[i]) > 0.001f
+                    || std::abs(peak - spectrumPeaks[i]) > 0.001f;
                 spectrumLevels[i] = smoothed;
+                spectrumPeaks[i] = peak;
             }
             telemetryAvailable = true;
         }
@@ -175,11 +175,15 @@ protected:
             telemetryAvailable = false;
             for (std::size_t i = 0; i < gf::visualVoiceCount; ++i)
                 voiceEnvelopes[i] = 0.0f;
-            for (float& level : spectrumLevels)
+            for (std::size_t i = 0; i < gf::spectrumBandCount; ++i)
             {
-                const float smoothed = level * 0.74f;
-                spectrumChanged = spectrumChanged || std::abs(smoothed - level) > 0.001f;
-                level = smoothed;
+                const float smoothed = spectrumLevels[i] * 0.70f;
+                const float peak = spectrumPeaks[i] * 0.94f;
+                spectrumChanged = spectrumChanged
+                    || std::abs(smoothed - spectrumLevels[i]) > 0.001f
+                    || std::abs(peak - spectrumPeaks[i]) > 0.001f;
+                spectrumLevels[i] = smoothed;
+                spectrumPeaks[i] = peak;
             }
         }
 
@@ -205,47 +209,20 @@ protected:
 
         beginPath();
         rect(0, 0, width, height);
-        fillPaint(linearGradient(0, 0, 0, height,
-                                 p.backgroundTop, p.backgroundBottom));
+        fillColor(p.backgroundTop);
         fill();
         closePath();
 
-        // A shallow listening field gives the body a material boundary while
-        // keeping the composition open and almost architectural.
+        // The shell follows the website's graphite language: one quiet field,
+        // one hairline boundary, and no simulated material texture.
         beginPath();
         roundedRect(20, 80, width - 40, height - 118, 12);
-        fillPaint(boxGradient(20, 80, width - 40, height - 118, 12, 18,
-                              p.bodyTop.withAlpha(0.20f),
-                              p.bodyBottom.withAlpha(0.02f)));
+        fillColor(p.bodyTop);
         fill();
         strokeWidth(1.0f);
-        strokeColor(p.hairline.withAlpha(0.58f));
+        strokeColor(p.hairline.withAlpha(0.68f));
         stroke();
         closePath();
-
-        // Sparse, deterministic micro-lines create a tactile grain without
-        // turning the background into visible noise or visual decoration.
-        save();
-        scissor(20, 80, width - 40, height - 118);
-        beginPath();
-        strokeWidth(0.5f);
-        strokeColor(p.texture.withAlpha(0.11f));
-        for (int row = 0; row < 24; ++row)
-        {
-            const float y = 87.0f + static_cast<float>(row) * 9.0f;
-            const float x = 29.0f + static_cast<float>((row * 31) % 87);
-            moveTo(x, y);
-            lineTo(x + 18.0f + static_cast<float>((row % 4) * 9), y);
-
-            if ((row % 3) == 0)
-            {
-                moveTo(x + 240.0f, y + 3.0f);
-                lineTo(x + 264.0f + static_cast<float>((row % 2) * 12), y + 3.0f);
-            }
-        }
-        stroke();
-        closePath();
-        restore();
 
         // One quiet rule gives the title room to breathe and keeps the body
         // aligned without turning the interface into a stack of panels.
@@ -413,6 +390,7 @@ private:
     std::array<float, gf::visualVoiceCount> voicePhases {};
     std::array<float, gf::visualVoiceCount> voiceEnvelopes {};
     std::array<float, gf::spectrumBandCount> spectrumLevels {};
+    std::array<float, gf::spectrumBandCount> spectrumPeaks {};
 
     const gf::GranularFreezeTelemetrySource* findTelemetrySource() const noexcept
     {
@@ -537,15 +515,16 @@ private:
         const float innerWidth = actualWidth - 26.0f;
         const float innerHeight = screenHeight - 24.0f;
         const float floor = innerY + innerHeight - 4.0f;
-        const bool hasSignal = telemetryAvailable && (grainActivity > 0.01f
-            || activeVoiceCount > 0 || launchPulse > 0.01f);
+        float spectralPeak = 0.0f;
+        for (const float peak : spectrumPeaks)
+            spectralPeak = std::max(spectralPeak, peak);
+        const bool hasSignal = telemetryAvailable && (spectralPeak > 0.008f
+            || grainActivity > 0.01f || activeVoiceCount > 0
+            || launchPulse > 0.01f);
 
         beginPath();
         roundedRect(actualX, screenY, actualWidth, screenHeight, 8.0f);
-        fillPaint(boxGradient(actualX, screenY, actualWidth, screenHeight,
-                              8.0f, 18.0f,
-                              p.surfaceTop.withAlpha(0.50f),
-                              p.backgroundBottom.withAlpha(0.74f)));
+        fillColor(p.surfaceBottom);
         fill();
         strokeWidth(hasSignal ? 1.0f : 0.75f);
         strokeColor(hasSignal ? p.accentDim.withAlpha(0.72f)
@@ -555,9 +534,7 @@ private:
 
         beginPath();
         roundedRect(innerX, innerY, innerWidth, innerHeight, 5.0f);
-        fillPaint(linearGradient(0.0f, innerY, 0.0f, floor,
-                                 p.backgroundTop.withAlpha(0.32f),
-                                 p.backgroundBottom.withAlpha(0.92f)));
+        fillColor(p.backgroundBottom);
         fill();
         strokeWidth(0.55f);
         strokeColor(p.hairline.withAlpha(0.36f));
@@ -588,56 +565,81 @@ private:
 
         const float step = (innerWidth - 8.0f)
             / static_cast<float>(gf::spectrumBandCount - 1);
-        for (std::size_t i = 0; i < gf::spectrumBandCount; ++i)
-        {
-            const float level = std::clamp(spectrumLevels[i], 0.0f, 1.0f);
-            const float x = innerX + 4.0f + static_cast<float>(i) * step;
-            const float height = 1.0f + level * (innerHeight - 15.0f);
+        const auto pointX = [innerX, step](const std::size_t index) {
+            return innerX + 4.0f + static_cast<float>(index) * step;
+        };
+        const auto pointY = [floor, innerHeight](const float level) {
+            const float shaped = std::pow(std::clamp(level, 0.0f, 1.0f), 0.72f);
+            return floor - 4.0f - shaped * (innerHeight - 15.0f);
+        };
+
+        // A single continuous ribbon keeps the display spectral rather than
+        // turning it into a collection of unrelated columns. The tiny
+        // under-trace gives the meter a physical presence without gloss.
+        const auto drawTrace = [&](const bool fillArea, const Color color,
+                                   const float widthValue) {
             beginPath();
-            roundedRect(x - 4.0f, floor - height, 8.0f, height, 2.0f);
-            fillPaint(linearGradient(0.0f, floor, 0.0f, floor - height,
-                                     p.accentDim.withAlpha(0.28f),
-                                     p.accent.withAlpha(0.76f)));
-            fill();
-            closePath();
+            const float firstX = pointX(0);
+            const float firstY = pointY(spectrumLevels[0]);
+            moveTo(firstX, firstY);
+            for (std::size_t i = 1; i < gf::spectrumBandCount; ++i)
+            {
+                const float previousX = pointX(i - 1);
+                const float previousY = pointY(spectrumLevels[i - 1]);
+                const float currentX = pointX(i);
+                const float currentY = pointY(spectrumLevels[i]);
+                bezierTo(previousX + step * 0.42f, previousY,
+                         currentX - step * 0.42f, currentY,
+                         currentX, currentY);
+            }
 
-        }
+            if (fillArea)
+            {
+                lineTo(pointX(gf::spectrumBandCount - 1), floor);
+                lineTo(firstX, floor);
+                closePath();
+                fillColor(color);
+                fill();
+            }
+            else
+            {
+                strokeWidth(widthValue);
+                strokeColor(color);
+                stroke();
+            }
+        };
 
-        beginPath();
+        drawTrace(true, p.accent.withAlpha(hasSignal ? 0.045f : 0.012f), 0.0f);
+        drawTrace(false, p.accent.withAlpha(hasSignal ? 0.17f : 0.055f), 2.2f);
+        drawTrace(false,
+                  p.accent.withAlpha(hasSignal
+                      ? 0.68f + std::min(grainActivity, 1.0f) * 0.10f : 0.16f),
+                  hasSignal ? 1.15f : 0.65f);
+
+        // Peak ticks have their own decay, so transients remain legible after
+        // the main ribbon has moved on without leaving a noisy history trail.
         for (std::size_t i = 0; i < gf::spectrumBandCount; ++i)
         {
+            const float peak = std::clamp(spectrumPeaks[i], 0.0f, 1.0f);
             const float level = std::clamp(spectrumLevels[i], 0.0f, 1.0f);
-            const float x = innerX + 4.0f + static_cast<float>(i) * step;
-            const float height = 1.0f + level * (innerHeight - 15.0f);
-            if (i == 0)
-                moveTo(x, floor - height);
-            else
-                lineTo(x, floor - height);
-        }
-        strokeWidth(hasSignal ? 1.1f : 0.7f);
-        strokeColor(p.accent.withAlpha(hasSignal ? 0.70f : 0.22f));
-        stroke();
-        for (std::size_t i = 0; i < gf::visualVoiceCount; ++i)
-        {
-            const float envelope = voiceEnvelopes[i];
-            if (! hasSignal || envelope <= 0.01f)
+            if (! hasSignal || peak <= 0.018f || peak <= level + 0.015f)
                 continue;
 
-            const float phase = voicePhases[i];
-            const float x = innerX + 4.0f + phase * (innerWidth - 8.0f);
-            const std::size_t band = std::min<std::size_t>(
-                gf::spectrumBandCount - 1,
-                static_cast<std::size_t>(phase * gf::spectrumBandCount));
-            const float y = floor - 4.0f
-                - spectrumLevels[band] * (innerHeight - 15.0f);
+            const float peakY = pointY(peak);
+            const float tickLength = std::min(8.0f, 1.5f
+                + (peak - level) * 26.0f);
             beginPath();
-            circle(x, y, 1.3f + envelope * 1.0f);
-            fillColor(p.ink.withAlpha(0.46f + envelope * 0.42f));
-            fill();
+            moveTo(pointX(i), peakY);
+            lineTo(pointX(i), peakY - tickLength);
+            strokeWidth(0.55f);
+            strokeColor(p.ink.withAlpha(0.16f + peak * 0.20f));
+            stroke();
             closePath();
         }
 
-        if (hasSignal)
+        // The scheduler is retained as one quiet reference line, never as a
+        // second animated object competing with the frequency display.
+        if (hasSignal && activeVoiceCount > 0)
         {
             const float playheadX = innerX + 4.0f
                 + sequencePhase * (innerWidth - 8.0f);
@@ -661,23 +663,11 @@ private:
 
         beginPath();
         roundedRect(x, y, width, height, 4.0f);
-        fillPaint(boxGradient(x, y, width, height, 4.0f, 12.0f,
-                              frozen ? p.surfaceLiftedTop.withAlpha(0.82f)
-                                     : p.surfaceTop.withAlpha(0.28f),
-                              frozen ? p.surfaceLiftedBottom.withAlpha(0.58f)
-                                     : p.surfaceBottom.withAlpha(0.06f)));
+        fillColor(frozen ? p.surfaceLiftedTop : p.surfaceTop);
         fill();
         strokeWidth(focus || frozen ? 1.0f : 0.65f);
         strokeColor(frozen ? p.accent.withAlpha(0.82f)
                            : (focus ? p.quiet : p.hairline.withAlpha(0.34f)));
-        stroke();
-        closePath();
-
-        beginPath();
-        moveTo(x + 8.0f, y + 1.0f);
-        lineTo(x + width - 8.0f, y + 1.0f);
-        strokeWidth(0.7f);
-        strokeColor(p.ink.withAlpha(frozen ? 0.18f : 0.05f));
         stroke();
         closePath();
 
@@ -732,28 +722,15 @@ private:
         const bool focus = hovered == static_cast<int>(index) ||
                            active == static_cast<int>(index);
 
-        // The resting state is still, but not flat: a very low-contrast
-        // material gradient gives each control a surface, while focus raises
-        // it with a clearer edge and a cooler highlight.
+        // The website uses flat graphite cards. Focus is communicated by a
+        // hairline and a restrained lift, never by gloss, texture, or shadow.
         beginPath();
         roundedRect(x, y, width, height, 4);
-        fillPaint(boxGradient(x, y, width, height, 4, 12,
-                              focus ? p.surfaceLiftedTop.withAlpha(0.88f)
-                                    : p.surfaceTop.withAlpha(0.23f),
-                              focus ? p.surfaceLiftedBottom.withAlpha(0.58f)
-                                    : p.surfaceBottom.withAlpha(0.04f)));
+        fillColor(focus ? p.surfaceLiftedTop : p.surfaceTop);
         fill();
         strokeWidth(focus ? 1.0f : 0.65f);
         strokeColor(focus ? p.hairline.withAlpha(0.90f)
                           : p.hairline.withAlpha(0.32f));
-        stroke();
-        closePath();
-
-        beginPath();
-        moveTo(x + 8, y + 1);
-        lineTo(x + width - 8, y + 1);
-        strokeWidth(0.7f);
-        strokeColor(p.ink.withAlpha(focus ? 0.15f : 0.045f));
         stroke();
         closePath();
 
