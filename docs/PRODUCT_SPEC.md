@@ -33,6 +33,15 @@ The plug-in is a stereo effect with no MIDI. Targets are VST3/CLAP on macOS and
 Windows and AU on macOS. Product version is 0.2.0; CLAP ID is
 `com.gabrielgarciaalonso.granularfreeze`; DPF IDs are `GF01`/`GFZP`.
 
+## Visual treatment
+
+The editor shell follows the companion website's graphite language: flat near-
+black panels, thin neutral hairlines, quiet typography, and restrained corner
+radii. The three selectable palettes stay close to grayscale, with roughly 20%
+saturation in their atmosphere accents. Saturated contrast is reserved for the
+signal display and state meters; the shell has no decorative grain, texture, or
+gloss treatment.
+
 ## Editor telemetry
 
 The editor reserves one wide horizontal screen as its only animated surface. The
