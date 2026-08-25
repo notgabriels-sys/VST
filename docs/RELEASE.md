@@ -2,15 +2,28 @@
 
 ## Current boundary
 
-`v0.2.0-rc.4` is the next private draft prerelease, built from the hardened
-DPF implementation on `main` after the release-pipeline and audio-boundary
-hardening merge. The first `rc.3` tag was intentionally left immutable after
+`v0.2.0-rc.5` is the current private draft prerelease. Its immutable annotated
+tag resolves to `4d031a1775bd7b9620f6f332f45186f6b64dae28`, the hardened `main`
+commit that removes DPF's unnecessary AU network and arbitrary file
+read/write resource declaration. The [release workflow run 32820071847](https://github.com/notgabriels-sys/VST/actions/runs/32820071847)
+passed the annotated-tag/current-`main` guard, both platform builds and
+behavioural suites, strict packaging, and draft creation. The downloaded
+`rc.5` assets matched their `SHA256SUMS.txt` file, both ZIPs passed archive
+testing, the macOS AU resource declaration was absent, and the exact
+downloaded AU passed `auval` with `AU VALIDATION SUCCEEDED`.
+
+The release asset SHA-256 values read back from the draft are:
+
+- macOS ZIP: `51eebb0d6f3672060937d75c2c276a5e865e424da867d59b8a88a1d449735c51`
+- Windows ZIP: `db55f4fed674a837513bffc58369ecd7501374c381dfb3a502df9b7e45176858`
+- `SHA256SUMS.txt`: `ae69a51b36455a5feca4f3c491a73755bd61d159e9830876f4c31986bb9b65e8`
+
+`rc.5` supersedes `rc.4`; `rc.4` was valid but was created before the AU
+metadata hardening. The first `rc.3` tag was intentionally left immutable after
 its fail-closed tag-source check exposed a checkout/ref assumption; it has no
-release assets and must not be used. Once the `rc.4` tag workflow completes,
-its automated build, behavioural-test, package, archive-integrity, and local AU
-validation evidence will supersede the older `v0.2.0-rc.2` draft. The earlier
-`v0.2.0-rc.1`, `v0.2.0-rc.2`, and failed `v0.2.0-rc.3` candidates must not be
-used as the final release artifact.
+release assets and must not be used. The earlier `v0.2.0-rc.1`, `v0.2.0-rc.2`,
+failed `v0.2.0-rc.3`, and superseded `v0.2.0-rc.4` candidates must not be used
+as the final release artifact.
 
 The current candidate is still unsigned, not notarized, and not approved for
 sale or public distribution. Treat it as an exact-artifact DAW and listening
