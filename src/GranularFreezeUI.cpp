@@ -157,10 +157,13 @@ protected:
                 const float nextLevel = std::clamp(telemetry.spectrumLevels[i].load(
                     std::memory_order_relaxed), 0.0f, 1.0f);
                 const float smoothed = spectrumLevels[i]
-                    + (nextLevel - spectrumLevels[i]) * 0.26f;
+                    + (nextLevel - spectrumLevels[i]) * 0.34f;
+                const float peak = std::max(smoothed, spectrumPeaks[i] * 0.972f);
                 spectrumChanged = spectrumChanged
-                    || std::abs(smoothed - spectrumLevels[i]) > 0.001f;
+                    || std::abs(smoothed - spectrumLevels[i]) > 0.001f
+                    || std::abs(peak - spectrumPeaks[i]) > 0.001f;
                 spectrumLevels[i] = smoothed;
+                spectrumPeaks[i] = peak;
             }
             telemetryAvailable = true;
         }
@@ -172,11 +175,15 @@ protected:
             telemetryAvailable = false;
             for (std::size_t i = 0; i < gf::visualVoiceCount; ++i)
                 voiceEnvelopes[i] = 0.0f;
-            for (float& level : spectrumLevels)
+            for (std::size_t i = 0; i < gf::spectrumBandCount; ++i)
             {
-                const float smoothed = level * 0.74f;
-                spectrumChanged = spectrumChanged || std::abs(smoothed - level) > 0.001f;
-                level = smoothed;
+                const float smoothed = spectrumLevels[i] * 0.70f;
+                const float peak = spectrumPeaks[i] * 0.94f;
+                spectrumChanged = spectrumChanged
+                    || std::abs(smoothed - spectrumLevels[i]) > 0.001f
+                    || std::abs(peak - spectrumPeaks[i]) > 0.001f;
+                spectrumLevels[i] = smoothed;
+                spectrumPeaks[i] = peak;
             }
         }
 
@@ -383,6 +390,7 @@ private:
     std::array<float, gf::visualVoiceCount> voicePhases {};
     std::array<float, gf::visualVoiceCount> voiceEnvelopes {};
     std::array<float, gf::spectrumBandCount> spectrumLevels {};
+    std::array<float, gf::spectrumBandCount> spectrumPeaks {};
 
     const gf::GranularFreezeTelemetrySource* findTelemetrySource() const noexcept
     {
@@ -507,8 +515,12 @@ private:
         const float innerWidth = actualWidth - 26.0f;
         const float innerHeight = screenHeight - 24.0f;
         const float floor = innerY + innerHeight - 4.0f;
-        const bool hasSignal = telemetryAvailable && (grainActivity > 0.01f
-            || activeVoiceCount > 0 || launchPulse > 0.01f);
+        float spectralPeak = 0.0f;
+        for (const float peak : spectrumPeaks)
+            spectralPeak = std::max(spectralPeak, peak);
+        const bool hasSignal = telemetryAvailable && (spectralPeak > 0.008f
+            || grainActivity > 0.01f || activeVoiceCount > 0
+            || launchPulse > 0.01f);
 
         beginPath();
         roundedRect(actualX, screenY, actualWidth, screenHeight, 8.0f);
@@ -553,53 +565,81 @@ private:
 
         const float step = (innerWidth - 8.0f)
             / static_cast<float>(gf::spectrumBandCount - 1);
-        for (std::size_t i = 0; i < gf::spectrumBandCount; ++i)
-        {
-            const float level = std::clamp(spectrumLevels[i], 0.0f, 1.0f);
-            const float x = innerX + 4.0f + static_cast<float>(i) * step;
-            const float height = 1.0f + level * (innerHeight - 15.0f);
-            beginPath();
-            roundedRect(x - 4.0f, floor - height, 8.0f, height, 2.0f);
-            fillColor(p.accent.withAlpha(hasSignal ? 0.68f : 0.14f));
-            fill();
-            closePath();
-        }
+        const auto pointX = [innerX, step](const std::size_t index) {
+            return innerX + 4.0f + static_cast<float>(index) * step;
+        };
+        const auto pointY = [floor, innerHeight](const float level) {
+            const float shaped = std::pow(std::clamp(level, 0.0f, 1.0f), 0.72f);
+            return floor - 4.0f - shaped * (innerHeight - 15.0f);
+        };
 
-        beginPath();
+        // A single continuous ribbon keeps the display spectral rather than
+        // turning it into a collection of unrelated columns. The tiny
+        // under-trace gives the meter a physical presence without gloss.
+        const auto drawTrace = [&](const bool fillArea, const Color color,
+                                   const float widthValue) {
+            beginPath();
+            const float firstX = pointX(0);
+            const float firstY = pointY(spectrumLevels[0]);
+            moveTo(firstX, firstY);
+            for (std::size_t i = 1; i < gf::spectrumBandCount; ++i)
+            {
+                const float previousX = pointX(i - 1);
+                const float previousY = pointY(spectrumLevels[i - 1]);
+                const float currentX = pointX(i);
+                const float currentY = pointY(spectrumLevels[i]);
+                bezierTo(previousX + step * 0.42f, previousY,
+                         currentX - step * 0.42f, currentY,
+                         currentX, currentY);
+            }
+
+            if (fillArea)
+            {
+                lineTo(pointX(gf::spectrumBandCount - 1), floor);
+                lineTo(firstX, floor);
+                closePath();
+                fillColor(color);
+                fill();
+            }
+            else
+            {
+                strokeWidth(widthValue);
+                strokeColor(color);
+                stroke();
+            }
+        };
+
+        drawTrace(true, p.accent.withAlpha(hasSignal ? 0.045f : 0.012f), 0.0f);
+        drawTrace(false, p.accent.withAlpha(hasSignal ? 0.17f : 0.055f), 2.2f);
+        drawTrace(false,
+                  p.accent.withAlpha(hasSignal
+                      ? 0.68f + std::min(grainActivity, 1.0f) * 0.10f : 0.16f),
+                  hasSignal ? 1.15f : 0.65f);
+
+        // Peak ticks have their own decay, so transients remain legible after
+        // the main ribbon has moved on without leaving a noisy history trail.
         for (std::size_t i = 0; i < gf::spectrumBandCount; ++i)
         {
+            const float peak = std::clamp(spectrumPeaks[i], 0.0f, 1.0f);
             const float level = std::clamp(spectrumLevels[i], 0.0f, 1.0f);
-            const float x = innerX + 4.0f + static_cast<float>(i) * step;
-            const float height = 1.0f + level * (innerHeight - 15.0f);
-            if (i == 0)
-                moveTo(x, floor - height);
-            else
-                lineTo(x, floor - height);
-        }
-        strokeWidth(hasSignal ? 1.1f : 0.7f);
-        strokeColor(p.accent.withAlpha(hasSignal ? 0.70f : 0.22f));
-        stroke();
-        for (std::size_t i = 0; i < gf::visualVoiceCount; ++i)
-        {
-            const float envelope = voiceEnvelopes[i];
-            if (! hasSignal || envelope <= 0.01f)
+            if (! hasSignal || peak <= 0.018f || peak <= level + 0.015f)
                 continue;
 
-            const float phase = voicePhases[i];
-            const float x = innerX + 4.0f + phase * (innerWidth - 8.0f);
-            const std::size_t band = std::min<std::size_t>(
-                gf::spectrumBandCount - 1,
-                static_cast<std::size_t>(phase * gf::spectrumBandCount));
-            const float y = floor - 4.0f
-                - spectrumLevels[band] * (innerHeight - 15.0f);
+            const float peakY = pointY(peak);
+            const float tickLength = std::min(8.0f, 1.5f
+                + (peak - level) * 26.0f);
             beginPath();
-            circle(x, y, 1.3f + envelope * 1.0f);
-            fillColor(p.ink.withAlpha(0.46f + envelope * 0.42f));
-            fill();
+            moveTo(pointX(i), peakY);
+            lineTo(pointX(i), peakY - tickLength);
+            strokeWidth(0.55f);
+            strokeColor(p.ink.withAlpha(0.16f + peak * 0.20f));
+            stroke();
             closePath();
         }
 
-        if (hasSignal)
+        // The scheduler is retained as one quiet reference line, never as a
+        // second animated object competing with the frequency display.
+        if (hasSignal && activeVoiceCount > 0)
         {
             const float playheadX = innerX + 4.0f
                 + sequencePhase * (innerWidth - 8.0f);

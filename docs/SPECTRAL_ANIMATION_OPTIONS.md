@@ -81,7 +81,9 @@ the strongest second experiment. Options 3 and 5 are credible alternate modes,
 but they should earn their place through a listening-and-screen comparison
 rather than being enabled by default immediately.
 
-No animation option is locked by this document. The current implementation
-retains the existing 24-band telemetry while the shell refinement is reviewed;
-the selected direction can then be implemented and validated as its own visual
-change.
+Option 2 is now the selected reference direction: the editor uses its 48-band
+ribbon, independently decaying peak ticks, and a 128-sample visual analysis
+window. Option 4 was rendered as a bounded comparison against the same
+signal; its spectrum-derived glints were attractive but read more like a
+diagnostic field than a continuous musical surface in this shell, so the
+comparison renderer is not shipped or exposed as a second user-facing mode.

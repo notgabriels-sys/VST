@@ -57,9 +57,9 @@ decorative texture competing with the spectral screen.
 ## Spectral memory screen
 
 When Freeze is engaged and the plug-in is processing audio, the wide screen is
-the editor's only continuously animated surface. It shows a restrained 24-band spectral
-readout of the processed signal, with active grain voices appearing as small
-moving points and the deterministic grain scheduler as a thin playhead. The
+the editor's only continuously animated surface. It shows a restrained 48-band spectral
+readout of the processed signal as one coherent ribbon, with independent peak
+ticks and the deterministic grain scheduler as a thin reference line. The
 screen receives only bounded atomic telemetry; it does not add host parameters,
 automation, or another audio sequencer. With no active grain voice, the display
 rests rather than inventing motion. The Freeze and parameter controls remain
