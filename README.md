@@ -39,6 +39,20 @@ use permissive licenses with attribution requirements; exact notices ship in
 Click the central state control to capture or release the memory. Drag any
 continuous parameter vertically; hold Shift while dragging for fine control.
 
+## Visual themes
+
+The interface keeps the same restrained geometry while offering three quiet
+color atmospheres. Select a palette from the three swatches in the upper-right
+corner, or press `T` while the editor is focused to cycle through them:
+
+- **Obsidian / Sage** — the default, cool and mineral.
+- **Ember / Copper** — warmer, earthen, and slightly more nocturnal.
+- **Nocturne / Violet** — a restrained ultraviolet accent for darker sessions.
+
+Themes are visual-only: they do not add audio parameters, automation lanes, or
+changes to the signal path. A shallow material gradient and sparse grain give
+the surfaces depth without turning the editor glossy or visually busy.
+
 ## Current verification boundary
 
 The framework-neutral engine/core/contract suites pass on macOS and Windows.
