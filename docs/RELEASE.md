@@ -2,12 +2,15 @@
 
 ## Current boundary
 
-`v0.2.0-rc.3` is the next private draft prerelease, built from the hardened
+`v0.2.0-rc.4` is the next private draft prerelease, built from the hardened
 DPF implementation on `main` after the release-pipeline and audio-boundary
-hardening merge. Once its tag workflow completes, its automated build,
-behavioural-test, package, archive-integrity, and local AU validation evidence
-will supersede the older `v0.2.0-rc.2` draft. The earlier `v0.2.0-rc.1` and
-`v0.2.0-rc.2` candidates must not be used as the final release artifact.
+hardening merge. The first `rc.3` tag was intentionally left immutable after
+its fail-closed tag-source check exposed a checkout/ref assumption; it has no
+release assets and must not be used. Once the `rc.4` tag workflow completes,
+its automated build, behavioural-test, package, archive-integrity, and local AU
+validation evidence will supersede the older `v0.2.0-rc.2` draft. The earlier
+`v0.2.0-rc.1`, `v0.2.0-rc.2`, and failed `v0.2.0-rc.3` candidates must not be
+used as the final release artifact.
 
 The current candidate is still unsigned, not notarized, and not approved for
 sale or public distribution. Treat it as an exact-artifact DAW and listening

@@ -61,12 +61,20 @@ jobs:
               echo "::error::release tag push must create a new ref; updates and force-moves are forbidden."
               exit 1
             fi
-            tag_type=$(git cat-file -t "$GITHUB_REF_NAME" 2>/dev/null || true)
-            if [ "$tag_type" != 'tag' ]; then
+            tag_refs=$(git ls-remote --tags origin \
+              "refs/tags/$GITHUB_REF_NAME" "refs/tags/$GITHUB_REF_NAME^{}")
+            tag_ref_count=$(printf '%s\n' "$tag_refs" | awk 'NF { count++ } END { print count + 0 }')
+            if [ "$tag_ref_count" -ne 2 ]; then
               echo "::error::release tags must be annotated; create a new annotated tag instead of reusing a lightweight tag."
               exit 1
             fi
-            release_commit=$(git rev-parse "$GITHUB_REF_NAME^{commit}")
+            release_commit=$(git rev-parse "$GITHUB_SHA^{commit}")
+            tag_target=$(printf '%s\n' "$tag_refs" |
+              awk '$2 ~ /\^\{\}$/ { print $1 }')
+            if [ -z "$tag_target" ] || [ "$release_commit" != "$tag_target" ]; then
+              echo "::error::annotated release tag does not resolve to the pushed commit."
+              exit 1
+            fi
             main_commit=$(git rev-parse 'origin/main^{commit}')
             if [ "$release_commit" != "$main_commit" ]; then
               echo "::error::release tag must point to the current origin/main commit."
