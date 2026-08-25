@@ -1,4 +1,6 @@
 #include "DistrhoUI.hpp"
+#include "DistrhoPlugin.hpp"
+#include "GranularFreezeTelemetry.h"
 #include "dsp/Parameters.h"
 
 #include <algorithm>
@@ -71,17 +73,18 @@ constexpr float themeSwatchGap = 17.0f;
 constexpr float themeSwatchRadius = 3.5f;
 
 constexpr float contentMargin = 32.0f;
-constexpr float headerRuleY = 82.0f;
-constexpr float freezeX = 32.0f;
-constexpr float freezeY = 106.0f;
-constexpr float freezeWidth = 192.0f;
-constexpr float freezeHeight = 190.0f;
-constexpr float parameterStartX = 278.0f;
-constexpr float parameterStepX = 142.0f;
-constexpr float parameterWidth = 126.0f;
-constexpr float parameterStartY = 106.0f;
-constexpr float parameterStepY = 93.0f;
-constexpr float parameterHeight = 74.0f;
+constexpr float headerRuleY = 76.0f;
+constexpr float topControlY = 85.0f;
+constexpr float topControlWidth = 156.5f;
+constexpr float topControlStep = 166.5f;
+constexpr float topControlHeight = 46.0f;
+constexpr float bottomControlY = 256.0f;
+constexpr float bottomControlWidth = 212.0f;
+constexpr float bottomControlStep = 222.0f;
+constexpr float bottomControlHeight = 47.0f;
+constexpr float screenY = 140.0f;
+constexpr float screenWidth = 656.0f;
+constexpr float screenHeight = 104.0f;
 }
 
 class GranularFreezeUI final : public UI
@@ -109,6 +112,90 @@ protected:
         }
     }
 
+    void uiIdle() override
+    {
+        if (telemetrySource == nullptr)
+            telemetrySource = findTelemetrySource();
+
+        const bool hadSource = telemetryAvailable;
+        const float previousActivity = grainActivity;
+        const float previousSequencePhase = sequencePhase;
+        const float previousLaunchPulse = launchPulse;
+        const std::uint32_t previousActiveVoiceCount = activeVoiceCount;
+        bool voicesChanged = false;
+        bool spectrumChanged = false;
+        const auto* source = telemetrySource;
+        if (source != nullptr)
+        {
+            const auto& telemetry = source->granularFreezeTelemetry();
+            const std::uint64_t launchCount = telemetry.launchCount.load(
+                std::memory_order_relaxed);
+            if (! telemetryAvailable)
+                lastLaunchCount = launchCount;
+            else if (launchCount != lastLaunchCount)
+                launchPulse = 1.0f;
+            lastLaunchCount = launchCount;
+
+            targetActivity = std::clamp(telemetry.activity.load(
+                std::memory_order_relaxed), 0.0f, 1.0f);
+            targetSequencePhase = std::clamp(telemetry.sequencePhase.load(
+                std::memory_order_relaxed), 0.0f, 1.0f);
+            activeVoiceCount = std::min<std::uint32_t>(
+                telemetry.activeVoices.load(std::memory_order_relaxed),
+                static_cast<std::uint32_t>(gf::visualVoiceCount));
+            for (std::size_t i = 0; i < gf::visualVoiceCount; ++i)
+            {
+                const float nextPhase = std::clamp(telemetry.voicePhases[i].load(
+                    std::memory_order_relaxed), 0.0f, 1.0f);
+                const float nextEnvelope = std::clamp(telemetry.voiceEnvelopes[i].load(
+                    std::memory_order_relaxed), 0.0f, 1.0f);
+                voicesChanged = voicesChanged
+                    || std::abs(nextPhase - voicePhases[i]) > 0.002f
+                    || std::abs(nextEnvelope - voiceEnvelopes[i]) > 0.002f;
+                voicePhases[i] = nextPhase;
+                voiceEnvelopes[i] = nextEnvelope;
+            }
+            for (std::size_t i = 0; i < gf::spectrumBandCount; ++i)
+            {
+                const float nextLevel = std::clamp(telemetry.spectrumLevels[i].load(
+                    std::memory_order_relaxed), 0.0f, 1.0f);
+                const float smoothed = spectrumLevels[i]
+                    + (nextLevel - spectrumLevels[i]) * 0.26f;
+                spectrumChanged = spectrumChanged
+                    || std::abs(smoothed - spectrumLevels[i]) > 0.001f;
+                spectrumLevels[i] = smoothed;
+            }
+            telemetryAvailable = true;
+        }
+        else
+        {
+            targetActivity = 0.0f;
+            targetSequencePhase = 0.0f;
+            activeVoiceCount = 0;
+            telemetryAvailable = false;
+            for (std::size_t i = 0; i < gf::visualVoiceCount; ++i)
+                voiceEnvelopes[i] = 0.0f;
+            for (float& level : spectrumLevels)
+            {
+                const float smoothed = level * 0.74f;
+                spectrumChanged = spectrumChanged || std::abs(smoothed - level) > 0.001f;
+                level = smoothed;
+            }
+        }
+
+        grainActivity += (targetActivity - grainActivity) * 0.24f;
+        sequencePhase = targetSequencePhase;
+        launchPulse *= 0.78f;
+
+        const bool valuesChanged = std::abs(grainActivity - previousActivity) > 0.0005f
+            || std::abs(sequencePhase - previousSequencePhase) > 0.0005f
+            || std::abs(launchPulse - previousLaunchPulse) > 0.0005f
+            || activeVoiceCount != previousActiveVoiceCount;
+        if (valuesChanged || voicesChanged || spectrumChanged
+            || (hadSource && ! telemetryAvailable))
+            repaint();
+    }
+
     void onNanoDisplay() override
     {
         const float width = static_cast<float>(getWidth());
@@ -126,8 +213,8 @@ protected:
         // A shallow listening field gives the body a material boundary while
         // keeping the composition open and almost architectural.
         beginPath();
-        roundedRect(20, 94, width - 40, height - 132, 12);
-        fillPaint(boxGradient(20, 94, width - 40, height - 132, 12, 18,
+        roundedRect(20, 80, width - 40, height - 118, 12);
+        fillPaint(boxGradient(20, 80, width - 40, height - 118, 12, 18,
                               p.bodyTop.withAlpha(0.20f),
                               p.bodyBottom.withAlpha(0.02f)));
         fill();
@@ -139,13 +226,13 @@ protected:
         // Sparse, deterministic micro-lines create a tactile grain without
         // turning the background into visible noise or visual decoration.
         save();
-        scissor(20, 94, width - 40, height - 132);
+        scissor(20, 80, width - 40, height - 118);
         beginPath();
         strokeWidth(0.5f);
         strokeColor(p.texture.withAlpha(0.11f));
         for (int row = 0; row < 24; ++row)
         {
-            const float y = 101.0f + static_cast<float>(row) * 9.0f;
+            const float y = 87.0f + static_cast<float>(row) * 9.0f;
             const float x = 29.0f + static_cast<float>((row * 31) % 87);
             moveTo(x, y);
             lineTo(x + 18.0f + static_cast<float>((row % 4) * 9), y);
@@ -190,15 +277,7 @@ protected:
 
         drawThemeSelector(width);
 
-        // The thin spine separates the memory control from the parameters,
-        // while the generous empty space keeps the composition ceremonial.
-        beginPath();
-        moveTo(250, parameterStartY + 2);
-        lineTo(250, parameterStartY + parameterStepY + parameterHeight - 2);
-        strokeWidth(1.0f);
-        strokeColor(p.hairline);
-        stroke();
-        closePath();
+        drawSpectralScreen(width);
 
         drawFreeze();
         for (uint32_t index = 1; index < gf::parameterCount; ++index)
@@ -322,6 +401,32 @@ private:
     int active = -1;
     double dragOriginY = 0.0;
     float dragOriginValue = 0.0f;
+    const gf::GranularFreezeTelemetrySource* telemetrySource = nullptr;
+    bool telemetryAvailable = false;
+    std::uint64_t lastLaunchCount = 0;
+    float targetActivity = 0.0f;
+    float grainActivity = 0.0f;
+    float targetSequencePhase = 0.0f;
+    float sequencePhase = 0.0f;
+    float launchPulse = 0.0f;
+    std::uint32_t activeVoiceCount = 0;
+    std::array<float, gf::visualVoiceCount> voicePhases {};
+    std::array<float, gf::visualVoiceCount> voiceEnvelopes {};
+    std::array<float, gf::spectrumBandCount> spectrumLevels {};
+
+    const gf::GranularFreezeTelemetrySource* findTelemetrySource() const noexcept
+    {
+#if DISTRHO_PLUGIN_WANT_DIRECT_ACCESS
+        void* const pointer = getPluginInstancePointer();
+        if (pointer == nullptr)
+            return nullptr;
+
+        Plugin* const plugin = static_cast<Plugin*>(pointer);
+        return dynamic_cast<const gf::GranularFreezeTelemetrySource*>(plugin);
+#else
+        return nullptr;
+#endif
+    }
 
     const ThemePalette& palette() const noexcept
     {
@@ -385,19 +490,28 @@ private:
     {
         if (index == static_cast<int>(gf::freezeIndex))
         {
-            x = freezeX;
-            y = freezeY;
-            width = freezeWidth;
-            height = freezeHeight;
+            x = contentMargin;
+            y = topControlY;
+            width = topControlWidth;
+            height = topControlHeight;
             return;
         }
 
-        const int column = (index - 1) % 3;
-        const int row = (index - 1) / 3;
-        x = parameterStartX + static_cast<float>(column) * parameterStepX;
-        y = parameterStartY + static_cast<float>(row) * parameterStepY;
-        width = parameterWidth;
-        height = parameterHeight;
+        if (index <= static_cast<int>(gf::holdMsIndex))
+        {
+            const int column = index;
+            x = contentMargin + static_cast<float>(column) * topControlStep;
+            y = topControlY;
+            width = topControlWidth;
+            height = topControlHeight;
+            return;
+        }
+
+        const int column = index - static_cast<int>(gf::grainSizeMsIndex);
+        x = contentMargin + static_cast<float>(column) * bottomControlStep;
+        y = bottomControlY;
+        width = bottomControlWidth;
+        height = bottomControlHeight;
     }
 
     static int hitTest(const double px, const double py)
@@ -412,74 +526,197 @@ private:
         return -1;
     }
 
+    void drawSpectralScreen(const float width)
+    {
+        const auto& p = palette();
+        const float actualWidth = std::min(width - contentMargin * 2.0f, screenWidth);
+        const float actualX = (width - actualWidth) * 0.5f;
+        const float actualRight = actualX + actualWidth;
+        const float innerX = actualX + 13.0f;
+        const float innerY = screenY + 12.0f;
+        const float innerWidth = actualWidth - 26.0f;
+        const float innerHeight = screenHeight - 24.0f;
+        const float floor = innerY + innerHeight - 4.0f;
+        const bool hasSignal = telemetryAvailable && (grainActivity > 0.01f
+            || activeVoiceCount > 0 || launchPulse > 0.01f);
+
+        beginPath();
+        roundedRect(actualX, screenY, actualWidth, screenHeight, 8.0f);
+        fillPaint(boxGradient(actualX, screenY, actualWidth, screenHeight,
+                              8.0f, 18.0f,
+                              p.surfaceTop.withAlpha(0.50f),
+                              p.backgroundBottom.withAlpha(0.74f)));
+        fill();
+        strokeWidth(hasSignal ? 1.0f : 0.75f);
+        strokeColor(hasSignal ? p.accentDim.withAlpha(0.72f)
+                              : p.hairline.withAlpha(0.62f));
+        stroke();
+        closePath();
+
+        beginPath();
+        roundedRect(innerX, innerY, innerWidth, innerHeight, 5.0f);
+        fillPaint(linearGradient(0.0f, innerY, 0.0f, floor,
+                                 p.backgroundTop.withAlpha(0.32f),
+                                 p.backgroundBottom.withAlpha(0.92f)));
+        fill();
+        strokeWidth(0.55f);
+        strokeColor(p.hairline.withAlpha(0.36f));
+        stroke();
+        closePath();
+
+        // The line grid stays almost hidden until the signal gives it a reason
+        // to breathe. The screen itself is the only place where motion lives.
+        for (int row = 0; row < 3; ++row)
+        {
+            const float y = innerY + 12.0f + static_cast<float>(row) * 22.0f;
+            beginPath();
+            moveTo(innerX + 4.0f, y);
+            lineTo(actualRight - 4.0f, y);
+            strokeWidth(0.45f);
+            strokeColor(p.hairline.withAlpha(0.15f));
+            stroke();
+            closePath();
+        }
+
+        beginPath();
+        moveTo(innerX + 4.0f, floor);
+        lineTo(actualRight - 4.0f, floor);
+        strokeWidth(0.65f);
+        strokeColor(p.hairline.withAlpha(0.36f));
+        stroke();
+        closePath();
+
+        const float step = (innerWidth - 8.0f)
+            / static_cast<float>(gf::spectrumBandCount - 1);
+        for (std::size_t i = 0; i < gf::spectrumBandCount; ++i)
+        {
+            const float level = std::clamp(spectrumLevels[i], 0.0f, 1.0f);
+            const float x = innerX + 4.0f + static_cast<float>(i) * step;
+            const float height = 1.0f + level * (innerHeight - 15.0f);
+            beginPath();
+            roundedRect(x - 4.0f, floor - height, 8.0f, height, 2.0f);
+            fillPaint(linearGradient(0.0f, floor, 0.0f, floor - height,
+                                     p.accentDim.withAlpha(0.28f),
+                                     p.accent.withAlpha(0.76f)));
+            fill();
+            closePath();
+
+        }
+
+        beginPath();
+        for (std::size_t i = 0; i < gf::spectrumBandCount; ++i)
+        {
+            const float level = std::clamp(spectrumLevels[i], 0.0f, 1.0f);
+            const float x = innerX + 4.0f + static_cast<float>(i) * step;
+            const float height = 1.0f + level * (innerHeight - 15.0f);
+            if (i == 0)
+                moveTo(x, floor - height);
+            else
+                lineTo(x, floor - height);
+        }
+        strokeWidth(hasSignal ? 1.1f : 0.7f);
+        strokeColor(p.accent.withAlpha(hasSignal ? 0.70f : 0.22f));
+        stroke();
+        for (std::size_t i = 0; i < gf::visualVoiceCount; ++i)
+        {
+            const float envelope = voiceEnvelopes[i];
+            if (! hasSignal || envelope <= 0.01f)
+                continue;
+
+            const float phase = voicePhases[i];
+            const float x = innerX + 4.0f + phase * (innerWidth - 8.0f);
+            const std::size_t band = std::min<std::size_t>(
+                gf::spectrumBandCount - 1,
+                static_cast<std::size_t>(phase * gf::spectrumBandCount));
+            const float y = floor - 4.0f
+                - spectrumLevels[band] * (innerHeight - 15.0f);
+            beginPath();
+            circle(x, y, 1.3f + envelope * 1.0f);
+            fillColor(p.ink.withAlpha(0.46f + envelope * 0.42f));
+            fill();
+            closePath();
+        }
+
+        if (hasSignal)
+        {
+            const float playheadX = innerX + 4.0f
+                + sequencePhase * (innerWidth - 8.0f);
+            beginPath();
+            moveTo(playheadX, innerY + 4.0f);
+            lineTo(playheadX, floor + 1.0f);
+            strokeWidth(0.7f + launchPulse * 0.25f);
+            strokeColor(p.accent.withAlpha(0.22f + launchPulse * 0.28f));
+            stroke();
+            closePath();
+        }
+    }
+
     void drawFreeze()
     {
+        float x, y, width, height;
+        controlBounds(static_cast<int>(gf::freezeIndex), x, y, width, height);
         const bool frozen = values[gf::freezeIndex] > 0.5f;
         const bool focus = hovered == static_cast<int>(gf::freezeIndex);
         const auto& p = palette();
-        constexpr float cx = freezeX + freezeWidth * 0.5f;
-        constexpr float cy = 198.0f;
-        constexpr float radius = 63.0f;
 
         beginPath();
-        circle(cx, cy, radius + 15.0f + (focus ? 2.0f : 0.0f));
-        fillPaint(radialGradient(cx - 12.0f, cy - 18.0f, radius - 18.0f,
-                                 radius + 22.0f,
-                                 p.ambient.withAlpha(frozen ? 0.16f : 0.07f),
-                                 p.ambient.withAlpha(0.0f)));
+        roundedRect(x, y, width, height, 4.0f);
+        fillPaint(boxGradient(x, y, width, height, 4.0f, 12.0f,
+                              frozen ? p.surfaceLiftedTop.withAlpha(0.82f)
+                                     : p.surfaceTop.withAlpha(0.28f),
+                              frozen ? p.surfaceLiftedBottom.withAlpha(0.58f)
+                                     : p.surfaceBottom.withAlpha(0.06f)));
         fill();
-        closePath();
-
-        beginPath();
-        circle(cx, cy, radius + (focus ? 2.0f : 0.0f));
-        const Color medallionTop = frozen
-            ? Color(p.surfaceTop, p.accentDim, 0.26f)
-            : p.surfaceTop;
-        fillPaint(radialGradient(cx - 18.0f, cy - 22.0f, 5.0f,
-                                 radius + 16.0f, medallionTop, p.surfaceBottom));
-        fill();
-        strokeWidth(frozen ? 1.5f : 1.0f);
-        strokeColor(frozen ? p.accent
-                           : (focus ? p.quiet : p.hairline));
+        strokeWidth(focus || frozen ? 1.0f : 0.65f);
+        strokeColor(frozen ? p.accent.withAlpha(0.82f)
+                           : (focus ? p.quiet : p.hairline.withAlpha(0.34f)));
         stroke();
         closePath();
 
         beginPath();
-        circle(cx, cy, radius - 5.0f);
+        moveTo(x + 8.0f, y + 1.0f);
+        lineTo(x + width - 8.0f, y + 1.0f);
         strokeWidth(0.7f);
-        strokeColor(p.ink.withAlpha(frozen ? 0.12f : 0.07f));
-        stroke();
-        closePath();
-
-        // A partial orbit gives the control a sense of captured time without
-        // leaning on the familiar power-button, snowflake, or waveform icons.
-        beginPath();
-        arc(cx, cy, radius - 10.0f, -2.15f,
-            frozen ? 3.60f : -0.55f, CCW);
-        strokeWidth(2.0f);
-        strokeColor(frozen ? p.accent : p.accentDim);
+        strokeColor(p.ink.withAlpha(frozen ? 0.18f : 0.05f));
         stroke();
         closePath();
 
         beginPath();
-        arc(cx, cy, radius - 6.0f, -2.40f, -1.22f, CCW);
-        strokeWidth(0.8f);
-        strokeColor(p.ink.withAlpha(0.14f));
-        stroke();
+        rect(x + 1.0f, y + 12.0f, 1.0f, height - 23.0f);
+        fillColor(frozen ? p.accent : p.hairline);
+        fill();
         closePath();
-
-        fontSize(10);
-        textAlign(ALIGN_CENTER | ALIGN_MIDDLE);
-        fillColor(p.quiet);
-        text(cx, cy - 29, "MEMORY", nullptr);
-
-        fontSize(19);
-        fillColor(frozen ? p.accent : p.ink);
-        text(cx, cy + 2, frozen ? "HELD" : "LIVE", nullptr);
 
         fontSize(9);
-        fillColor(p.accentDim);
-        text(cx, cy + 77, frozen ? "RELEASE" : "CAPTURE", nullptr);
+        textLetterSpacing(0.55f);
+        textAlign(ALIGN_LEFT | ALIGN_MIDDLE);
+        fillColor(p.quiet);
+        text(x + 14.0f, y + 13.0f, "FREEZE", nullptr);
+        textLetterSpacing(0.0f);
+
+        fontSize(16);
+        fillColor(frozen ? p.accent : p.ink);
+        text(x + 14.0f, y + 32.0f, frozen ? "HELD" : "LIVE", nullptr);
+
+        fontSize(8);
+        textAlign(ALIGN_RIGHT | ALIGN_MIDDLE);
+        fillColor(p.whisper);
+        text(x + width - 14.0f, y + 13.0f, "MEMORY", nullptr);
+
+        beginPath();
+        roundedRect(x + 14.0f, y + height - 8.0f, width - 28.0f, 2.0f, 1.0f);
+        fillColor(p.track);
+        fill();
+        closePath();
+        if (frozen)
+        {
+            beginPath();
+            roundedRect(x + 14.0f, y + height - 8.0f,
+                        width - 28.0f, 2.0f, 1.0f);
+            fillColor(p.accentDim);
+            fill();
+            closePath();
+        }
     }
 
     void drawParameter(const uint32_t index)
@@ -521,24 +758,24 @@ private:
         closePath();
 
         beginPath();
-        rect(x + 1, y + 14, 1, height - 28);
+        rect(x + 1, y + 12, 1, height - 22);
         fillColor(focus ? p.accent : p.hairline);
         fill();
         closePath();
 
-        fontSize(10);
+        fontSize(9);
         textAlign(ALIGN_LEFT | ALIGN_MIDDLE);
         fillColor(p.quiet);
-        text(x + 14, y + 18, descriptor.name, nullptr);
+        text(x + 14, y + 13, descriptor.name, nullptr);
 
         char value[48];
         formatValue(index, value, sizeof(value));
-        fontSize(17);
+        fontSize(16);
         fillColor(p.ink);
-        text(x + 14, y + 46, value, nullptr);
+        text(x + 14, y + 31, value, nullptr);
 
         beginPath();
-        roundedRect(x + 14, y + height - 14, width - 28, 2, 1);
+        roundedRect(x + 14, y + height - 8, width - 28, 2, 1);
         fillColor(p.track);
         fill();
         closePath();
@@ -546,7 +783,7 @@ private:
         if (normalized > 0)
         {
             beginPath();
-            roundedRect(x + 14, y + height - 14,
+            roundedRect(x + 14, y + height - 8,
                         (width - 28) * normalized, 2, 1);
             fillColor(focus ? p.accent : p.accentDim);
             fill();

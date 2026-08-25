@@ -36,8 +36,8 @@ use permissive licenses with attribution requirements; exact notices ship in
 | `densityHz` | Density | 0-200 Hz | 20 Hz |
 | `position` | Position | 0.00-1.00 | 1.00 |
 
-Click the central state control to capture or release the memory. Drag any
-continuous parameter vertically; hold Shift while dragging for fine control.
+Click the Freeze control to capture or release the memory. Drag any continuous
+parameter vertically; hold Shift while dragging for fine control.
 
 ## Visual themes
 
@@ -52,6 +52,17 @@ corner, or press `T` while the editor is focused to cycle through them:
 Themes are visual-only: they do not add audio parameters, automation lanes, or
 changes to the signal path. A shallow material gradient and sparse grain give
 the surfaces depth without turning the editor glossy or visually busy.
+
+## Spectral memory screen
+
+When Freeze is engaged and the plug-in is processing audio, the wide screen is
+the editor's only animated surface. It shows a restrained 24-band spectral
+readout of the processed signal, with active grain voices appearing as small
+moving points and the deterministic grain scheduler as a thin playhead. The
+screen receives only bounded atomic telemetry; it does not add host parameters,
+automation, or another audio sequencer. With no active grain voice, the display
+rests rather than inventing motion. The Freeze and parameter controls remain
+quiet, stable surfaces above and below it.
 
 ## Current verification boundary
 

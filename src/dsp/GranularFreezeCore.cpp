@@ -42,6 +42,7 @@ void GranularFreezeCore::prepare(double sampleRate, std::uint32_t maximumBlockSi
         wetWritePointers[i] = wet[i].data();
     }
     engine.prepare(rate);
+    spectrum.prepare(rate);
     reset();
 }
 
@@ -50,6 +51,7 @@ void GranularFreezeCore::reset() noexcept
     for (auto& channel : capture) std::fill(channel.begin(), channel.end(), 0.0f);
     for (auto& channel : wet) std::fill(channel.begin(), channel.end(), 0.0f);
     engine.reset();
+    spectrum.reset();
     frozen = {};
     writePosition = validSamples = 0;
     freezeTarget = false;
@@ -146,6 +148,7 @@ void GranularFreezeCore::process(const float* const inputs[2], float* const outp
             const float inRight = inputs[1][host];
             outputs[0][host] = inLeft * (1.0f - wetMix) + wet[0][i] * wetMix;
             outputs[1][host] = inRight * (1.0f - wetMix) + wet[1][i] * wetMix;
+            spectrum.push(0.5f * (outputs[0][host] + outputs[1][host]));
             if (transitionActive && advanceTransition()) { engine.reset(); frozen = {}; }
             if (fullyLive())
             {

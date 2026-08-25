@@ -20,6 +20,14 @@ class GrainEngine
 {
 public:
     static constexpr std::size_t maxVoices = 64;
+    static constexpr std::size_t visualVoiceCount = 8;
+
+    struct VisualVoiceState
+    {
+        bool active = false;
+        float phase = 0.0f;
+        float envelope = 0.0f;
+    };
 
     void prepare(double newSampleRate) noexcept;
     void reset() noexcept;
@@ -29,6 +37,10 @@ public:
 
     std::uint64_t getTotalLaunchCount() const noexcept { return totalLaunchCount; }
     std::size_t getActiveVoiceCount() const noexcept;
+    float getActivity() const noexcept { return activity; }
+    float getSequencePhase() const noexcept;
+    const std::array<VisualVoiceState, visualVoiceCount>&
+        getVisualVoiceStates() const noexcept { return visualVoices; }
 
 private:
     struct Voice
@@ -51,5 +63,7 @@ private:
     bool schedulingEnabled = false;
     std::uint64_t nextLaunchOrder = 0;
     std::uint64_t totalLaunchCount = 0;
+    float activity = 0.0f;
+    std::array<VisualVoiceState, visualVoiceCount> visualVoices {};
 };
 }
