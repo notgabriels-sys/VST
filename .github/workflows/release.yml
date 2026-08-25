@@ -35,8 +35,9 @@ jobs:
             runner: windows-2022
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
+          persist-credentials: false
           submodules: recursive
           fetch-depth: 0
 
@@ -60,11 +61,17 @@ jobs:
               echo "::error::release tag push must create a new ref; updates and force-moves are forbidden."
               exit 1
             fi
-            release_commit=$(git rev-parse "$GITHUB_SHA^{commit}")
-            git merge-base --is-ancestor "$release_commit" origin/main || {
-              echo "::error::release tag must point to a commit contained in origin/main."
+            tag_type=$(git cat-file -t "$GITHUB_REF_NAME" 2>/dev/null || true)
+            if [ "$tag_type" != 'tag' ]; then
+              echo "::error::release tags must be annotated; create a new annotated tag instead of reusing a lightweight tag."
               exit 1
-            }
+            fi
+            release_commit=$(git rev-parse "$GITHUB_REF_NAME^{commit}")
+            main_commit=$(git rev-parse 'origin/main^{commit}')
+            if [ "$release_commit" != "$main_commit" ]; then
+              echo "::error::release tag must point to the current origin/main commit."
+              exit 1
+            fi
           fi
 
       - name: Show CMake version
@@ -389,6 +396,51 @@ jobs:
         shell: pwsh
         run: ./scripts/package_win.ps1 -BuildDirectory build -OutputZip build/Granular-Freeze-Windows.zip
 
+      - name: Verify packaged Windows signatures
+        if: matrix.platform == 'windows' && steps.win_sign.outputs.win_signed == 'yes'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+
+          $verifyRoot = Join-Path $env:RUNNER_TEMP 'granular-freeze-windows-verify'
+          if (Test-Path -LiteralPath $verifyRoot) {
+              Remove-Item -LiteralPath $verifyRoot -Recurse -Force
+          }
+          try {
+              Expand-Archive -LiteralPath 'build/Granular-Freeze-Windows.zip' `
+                -DestinationPath $verifyRoot -Force
+
+              $signtool = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
+                            -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+                          Where-Object { $_.FullName -match '[\\/]x64[\\/]' } |
+                          Select-Object -First 1 -ExpandProperty FullName
+              if (-not $signtool) { throw 'signtool.exe not found on runner' }
+
+              $targets = @(
+                  Get-ChildItem -Path $verifyRoot -Recurse -File |
+                    Where-Object {
+                        $_.FullName -match '[\\/]Contents[\\/]x86_64-win[\\/]GranularFreeze\.(vst3|clap)$'
+                    }
+              )
+              if ($targets.Count -ne 2) {
+                  throw "expected exactly one signed Windows VST3 and one signed CLAP binary after extraction; found $($targets.Count)"
+              }
+
+              foreach ($target in $targets) {
+                  Write-Output "verifying packaged signature $($target.FullName)"
+                  & $signtool verify /pa /all /v $target.FullName
+                  if ($LASTEXITCODE -ne 0) {
+                      throw "packaged signature verification failed for $($target.FullName)"
+                  }
+              }
+          }
+          finally {
+              if (Test-Path -LiteralPath $verifyRoot) {
+                  Remove-Item -LiteralPath $verifyRoot -Recurse -Force
+              }
+          }
+
       - name: Record signing status
         shell: bash
         env:
@@ -415,7 +467,7 @@ jobs:
           } > "build/signing-status-$PLATFORM.txt"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: granular-freeze-${{ matrix.platform }}
           path: |
@@ -435,7 +487,7 @@ jobs:
       contents: write
     steps:
       - name: Refuse to mutate an existing release
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         with:
@@ -456,7 +508,7 @@ jobs:
             }
 
       - name: Download all build artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           path: dist
           merge-multiple: true
@@ -528,7 +580,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Create draft prerelease
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}

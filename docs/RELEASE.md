@@ -52,7 +52,9 @@ owner-controlled external gate. Windows Authenticode is likewise separate.
 
 Never move, reuse, or force-push an existing tag. Before a candidate tag,
 confirm it is absent locally, remotely, and from GitHub Releases; annotate only
-the exact reviewed `main` commit. Draft creation does not authorize publication.
+the exact reviewed `main` commit. The release workflow rejects lightweight tags
+and requires the annotated tag's commit to equal the current `origin/main` tip
+at workflow start. Draft creation does not authorize publication.
 
 ## Gumroad and other stores
 

@@ -144,8 +144,13 @@ void GranularFreezeCore::process(const float* const inputs[2], float* const outp
         for (std::uint32_t i = 0; i < count; ++i)
         {
             const std::uint32_t host = base + i;
-            const float inLeft = inputs[0][host];
-            const float inRight = inputs[1][host];
+            // A malformed upstream node must not inject NaN/Inf into the
+            // capture ring, wet path, or host output. Preserve all finite
+            // samples exactly; only non-finite samples become silence.
+            const float inLeft = std::isfinite(inputs[0][host])
+                ? inputs[0][host] : 0.0f;
+            const float inRight = std::isfinite(inputs[1][host])
+                ? inputs[1][host] : 0.0f;
             outputs[0][host] = inLeft * (1.0f - wetMix) + wet[0][i] * wetMix;
             outputs[1][host] = inRight * (1.0f - wetMix) + wet[1][i] * wetMix;
             spectrum.push(0.5f * (outputs[0][host] + outputs[1][host]));
