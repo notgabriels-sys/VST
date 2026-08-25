@@ -44,6 +44,11 @@ public:
     {
         for (std::size_t i = 0; i < values.size(); ++i)
             values[i] = gf::parameterDescriptors[i].defaultValue;
+
+#ifndef DGL_NO_SHARED_RESOURCES
+        loadSharedResources();
+        fontFace("__dpf_dejavusans_ttf__");
+#endif
     }
 
 protected:
@@ -261,8 +266,8 @@ private:
         text(cx, cy + 2, frozen ? "HELD" : "LIVE", nullptr);
 
         fontSize(9);
-        fillColor(whisper);
-        text(cx, cy + 55, frozen ? "RELEASE" : "CAPTURE", nullptr);
+        fillColor(accentDim);
+        text(cx, cy + 77, frozen ? "RELEASE" : "CAPTURE", nullptr);
     }
 
     void drawParameter(const uint32_t index)
