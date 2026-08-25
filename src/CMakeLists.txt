@@ -1,4 +1,7 @@
-add_library(GranularFreezeCore STATIC dsp/GrainEngine.cpp dsp/GranularFreezeCore.cpp)
+add_library(GranularFreezeCore STATIC
+  dsp/GrainEngine.cpp
+  dsp/GranularFreezeCore.cpp
+  dsp/SpectralAnalyzer.cpp)
 target_include_directories(GranularFreezeCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(GranularFreezeCore PUBLIC cxx_std_17)
 dpf_add_plugin(GranularFreeze TARGETS vst3 clap au

@@ -87,6 +87,8 @@ void GrainEngine::reset() noexcept
     schedulingEnabled = false;
     nextLaunchOrder = 0;
     totalLaunchCount = 0;
+    activity = 0.0f;
+    visualVoices = {};
 }
 
 std::size_t GrainEngine::getActiveVoiceCount() const noexcept
@@ -95,6 +97,17 @@ std::size_t GrainEngine::getActiveVoiceCount() const noexcept
     for (const auto& voice : voices)
         count += voice.active ? 1U : 0U;
     return count;
+}
+
+float GrainEngine::getSequencePhase() const noexcept
+{
+    if (! schedulingEnabled || ! std::isfinite(currentLaunchInterval)
+        || currentLaunchInterval <= 0.0)
+        return 0.0f;
+
+    const double remaining = std::clamp(samplesUntilNextLaunch,
+                                        0.0, currentLaunchInterval);
+    return static_cast<float>(1.0 - remaining / currentLaunchInterval);
 }
 
 void GrainEngine::launchVoice(const FrozenBufferView& source,
@@ -166,6 +179,7 @@ void GrainEngine::render(const FrozenBufferView& source,
     }
 
     const int rightSource = source.channelCount > 1 ? 1 : 0;
+    float peakWeight = 0.0f;
     for (std::uint32_t offset = 0; offset < count; ++offset)
     {
         if (schedulingEnabled && samplesUntilNextLaunch <= 0.0)
@@ -190,11 +204,32 @@ void GrainEngine::render(const FrozenBufferView& source,
         const float normaliser = std::max(1.0f, weights);
         left = std::isfinite(left) ? left / normaliser : 0.0f;
         right = std::isfinite(right) ? right / normaliser : 0.0f;
+        peakWeight = std::max(peakWeight, weights);
         destination.channels[0][start + offset] = left;
         if (destination.channelCount > 1)
             destination.channels[1][start + offset] = right;
         if (schedulingEnabled)
             samplesUntilNextLaunch -= 1.0;
+    }
+
+    activity = std::clamp(peakWeight / 4.0f, 0.0f, 1.0f);
+    visualVoices = {};
+    for (const auto& voice : voices)
+    {
+        if (! voice.active)
+            continue;
+
+        const std::size_t slot = static_cast<std::size_t>(
+            voice.launchOrder % visualVoiceCount);
+        const float phase = voice.envelopeLength > 1
+            ? static_cast<float>(voice.envelopeIndex)
+                / static_cast<float>(voice.envelopeLength - 1)
+            : 1.0f;
+        visualVoices[slot] = {
+            true,
+            std::clamp(phase, 0.0f, 1.0f),
+            std::clamp(0.5f - 0.5f * std::cos(twoPi * phase), 0.0f, 1.0f)
+        };
     }
 }
 }

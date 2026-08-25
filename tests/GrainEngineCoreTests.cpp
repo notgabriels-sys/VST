@@ -1,4 +1,5 @@
 #include "../src/dsp/GrainEngine.h"
+#include "../src/dsp/SpectralAnalyzer.h"
 
 #include <cmath>
 #include <cstdio>
@@ -59,6 +60,14 @@ int main()
           "engine: fractional scheduler launches without backlog");
     check(engine.getActiveVoiceCount() <= gf::GrainEngine::maxVoices,
           "engine: active voices stay inside fixed pool");
+    check(engine.getActivity() >= 0.0f && engine.getActivity() <= 1.0f,
+          "engine: visual activity stays bounded");
+    check(engine.getSequencePhase() >= 0.0f && engine.getSequencePhase() <= 1.0f,
+          "engine: visual scheduler phase stays bounded");
+    bool visualVoice = false;
+    for (const auto& voice : engine.getVisualVoiceStates())
+        visualVoice = visualVoice || voice.active;
+    check(visualVoice, "engine: live visual state exposes an active voice");
     bool stereoFinite = true;
     for (std::size_t i = 0; i < renderedLeft.size(); ++i)
         stereoFinite = stereoFinite && std::isfinite(renderedLeft[i])
@@ -81,6 +90,23 @@ int main()
     for (const float sample : renderedLeft)
         sanitisedFinite = sanitisedFinite && std::isfinite(sample);
     check(sanitisedFinite, "engine: non-finite automation is sanitised");
+
+    gf::SpectralAnalyzer analyzer;
+    analyzer.prepare(48000.0);
+    for (int sample = 0; sample < 512; ++sample)
+        analyzer.push(std::sin(2.0 * 3.14159265358979323846 * 440.0
+                               * static_cast<double>(sample) / 48000.0));
+
+    bool spectrumFinite = true;
+    bool spectrumResponds = false;
+    for (const float level : analyzer.getLevels())
+    {
+        spectrumFinite = spectrumFinite && std::isfinite(level)
+            && level >= 0.0f && level <= 1.0f;
+        spectrumResponds = spectrumResponds || level > 0.001f;
+    }
+    check(spectrumFinite, "spectrum: fixed bands remain finite and bounded");
+    check(spectrumResponds, "spectrum: processed signal produces a live readout");
 
     return failures == 0 ? 0 : 1;
 }
