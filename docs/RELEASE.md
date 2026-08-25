@@ -2,10 +2,12 @@
 
 ## Current boundary
 
-`v0.2.0-rc.2` is the current private draft prerelease, built from the merged
-DPF implementation on `main`. Its automated build, behavioural-test, package,
-archive-integrity, and local AU validation gates are green. The earlier
-`v0.2.0-rc.1` draft is superseded and must not be used as the release artifact.
+`v0.2.0-rc.3` is the next private draft prerelease, built from the hardened
+DPF implementation on `main` after the release-pipeline and audio-boundary
+hardening merge. Once its tag workflow completes, its automated build,
+behavioural-test, package, archive-integrity, and local AU validation evidence
+will supersede the older `v0.2.0-rc.2` draft. The earlier `v0.2.0-rc.1` and
+`v0.2.0-rc.2` candidates must not be used as the final release artifact.
 
 The current candidate is still unsigned, not notarized, and not approved for
 sale or public distribution. Treat it as an exact-artifact DAW and listening
