@@ -2,6 +2,7 @@
 #include "GranularFreezeTelemetry.h"
 #include "dsp/GranularFreezeCore.h"
 #include <array>
+#include <atomic>
 
 START_NAMESPACE_DISTRHO
 class GranularFreezePlugin final : public Plugin,
@@ -11,7 +12,8 @@ public:
     GranularFreezePlugin() : Plugin(gf::parameterCount, 0, 0)
     {
         for (std::size_t i = 0; i < values.size(); ++i)
-            values[i] = gf::parameterDescriptors[i].defaultValue;
+            values[i].store(gf::parameterDescriptors[i].defaultValue,
+                            std::memory_order_relaxed);
     }
 protected:
     const char* getLabel() const override { return "granularfreeze"; }
@@ -38,8 +40,14 @@ protected:
         parameter.ranges.max = d.maximum;
         parameter.ranges.def = d.defaultValue;
     }
-    float getParameterValue(uint32_t index) const override { return values[index]; }
-    void setParameterValue(uint32_t index, float value) override { values[index] = value; }
+    float getParameterValue(uint32_t index) const override
+    {
+        return values[index].load(std::memory_order_relaxed);
+    }
+    void setParameterValue(uint32_t index, float value) override
+    {
+        values[index].store(value, std::memory_order_relaxed);
+    }
     void activate() override
     {
         core.prepare(getSampleRate(), 16384);
@@ -52,8 +60,15 @@ protected:
     }
     void run(const float** inputs, float** outputs, uint32_t frames) override
     {
-        const gf::ParameterValues p { values[0], values[1], values[2], values[3],
-                                      values[4], values[5], values[6] };
+        const gf::ParameterValues p {
+            values[0].load(std::memory_order_relaxed),
+            values[1].load(std::memory_order_relaxed),
+            values[2].load(std::memory_order_relaxed),
+            values[3].load(std::memory_order_relaxed),
+            values[4].load(std::memory_order_relaxed),
+            values[5].load(std::memory_order_relaxed),
+            values[6].load(std::memory_order_relaxed)
+        };
         core.process(inputs, outputs, frames, p);
         publishTelemetry();
     }
@@ -89,7 +104,9 @@ private:
                                               std::memory_order_relaxed);
     }
 
-    std::array<float, gf::parameterCount> values {};
+    static_assert(std::atomic<float>::is_always_lock_free,
+                  "DPF parameter storage must be lock-free for the audio thread");
+    std::array<std::atomic<float>, gf::parameterCount> values {};
     gf::GranularFreezeCore core;
     gf::GranularFreezeTelemetry telemetry;
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(GranularFreezePlugin)

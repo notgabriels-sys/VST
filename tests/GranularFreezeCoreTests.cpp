@@ -93,5 +93,27 @@ int main()
         invalidFinite = invalidFinite && std::isfinite(largeOutLeft[i]) && std::isfinite(largeOutRight[i]);
     check(invalidFinite, "core: non-finite parameter block produces finite output");
 
+    gf::GranularFreezeCore malformedAudio;
+    malformedAudio.prepare(48000.0, 8);
+    const float malformedLeft[] {
+        std::numeric_limits<float>::quiet_NaN(), 0.25f,
+        std::numeric_limits<float>::infinity(), -0.25f
+    };
+    const float malformedRight[] {
+        -std::numeric_limits<float>::infinity(), 0.5f,
+        std::numeric_limits<float>::quiet_NaN(), -0.5f
+    };
+    float malformedOutLeft[4] {};
+    float malformedOutRight[4] {};
+    const float* malformedInputs[] { malformedLeft, malformedRight };
+    float* malformedOutputs[] { malformedOutLeft, malformedOutRight };
+    malformedAudio.process(malformedInputs, malformedOutputs, 4, {});
+    bool malformedFinite = true;
+    for (int i = 0; i < 4; ++i)
+        malformedFinite = malformedFinite
+            && std::isfinite(malformedOutLeft[i])
+            && std::isfinite(malformedOutRight[i]);
+    check(malformedFinite, "core: non-finite audio samples become finite output");
+
     return failures == 0 ? 0 : 1;
 }

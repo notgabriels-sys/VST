@@ -36,9 +36,10 @@ temporary macOS keychain even when signing or notarization fails. The macOS
 packager's `--preserve-signature` mode is designed to prevent replacement of
 Developer ID signatures or stapled tickets and follows Apple's signed-ZIP
 `ditto -c -k --keepParent` pattern. Non-secret preservation,
-archive, and extraction mechanics have been tested locally; Developer ID
-import/signing, Apple notarization/stapling, and Windows Authenticode have never
-been exercised end to end with real credentials.
+archive, extraction, and exact post-archive signature read-back mechanics have
+been tested locally or in the workflow path; Developer ID import/signing,
+Apple notarization/stapling, and Windows Authenticode have never been
+exercised end to end with real credentials.
 
 ## Production-signing contract — now read by the workflow
 
