@@ -47,6 +47,10 @@ bash scripts/package_mac.sh build-universal build-universal/Granular-Freeze-macO
 The packager requires exactly one VST3, AU, and CLAP bundle; exact arm64 and
 x86_64 slices; macOS 12.0 minimum; valid signatures; README, project license,
 and third-party notices; a clean ZIP root; and successful extraction/recheck.
+It also rejects an AU `resourceUsage` declaration. The DPF exporter currently
+emits broad network and arbitrary file read/write claims, but Granular Freeze
+performs no network or file I/O; the project removes those claims immediately
+after AU metadata generation and the packager checks the extracted final bytes.
 
 ## Windows candidate
 

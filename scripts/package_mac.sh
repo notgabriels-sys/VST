@@ -85,12 +85,25 @@ verify_signature() {
   codesign --verify --deep --strict "$1"
 }
 
+verify_au_metadata() {
+  local bundle=$1
+  local plist="$bundle/Contents/Info.plist"
+
+  [[ -f "$plist" ]] || die "AU bundle is missing Info.plist: $plist"
+  /usr/bin/plutil -lint "$plist" > /dev/null ||
+    die "AU Info.plist is invalid: $plist"
+  if /usr/bin/plutil -extract AudioComponents.0.resourceUsage xml1 -o - "$plist" > /dev/null 2>&1; then
+    die "AU Info.plist must not claim network or arbitrary file access: $plist"
+  fi
+}
+
 # Validate immutable bundle properties before mutating either signature. A
 # wrong-architecture build must fail as a pure preflight rather than leave one
 # bundle re-signed and the other untouched.
 for bundle in "${vst3_bundles[@]}" "${component_bundles[@]}" "${clap_bundles[@]}"; do
   verify_bundle "$bundle"
 done
+verify_au_metadata "${component_bundles[0]}"
 
 # Unsigned engineering candidates receive a valid ad-hoc bundle seal. A
 # Developer ID workflow passes --preserve-signature so packaging cannot replace
@@ -114,6 +127,7 @@ for bundle in "$staging_directory/GranularFreeze.vst3" "$staging_directory/Granu
   verify_signature "$bundle"
   verify_bundle "$bundle"
 done
+verify_au_metadata "$staging_directory/GranularFreeze.component"
 
 if [[ $preserve_signature == true ]]; then
   # Follow Apple's signed-ZIP recipe so resource data and extended attributes,
@@ -167,6 +181,7 @@ for bundle in \
   verify_signature "$bundle"
   verify_bundle "$bundle"
 done
+verify_au_metadata "$verification_directory/$archive_root/GranularFreeze.component"
 
 echo "Packaged macOS candidate: $output_zip"
 unzip -Z1 "$output_zip"
