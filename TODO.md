@@ -1,67 +1,69 @@
-# Todo
+# Granular Freeze release tracker
 
-## Remaining gates before any release decision
+## Current private candidate
 
-- [ ] Leave `v0.1.0` and the older private-draft `v0.1.1-rc.1` untouched; use
-      only a newly verified-unused `v0.2.0-rc.N` tag for a future candidate.
-- [ ] Gabriel evaluates the build by ear in Ableton Live or Bitwig.
-- [ ] Run fresh CI for the exact candidate on `macos-15-intel` and
-      `windows-2022`; both jobs must build, run both offline suites, package,
-      and upload artifacts.
-- [ ] Exercise the v0.2 release-candidate workflow; it has not been run for
-      this Grain Core.
-- [ ] Verify both downloaded ZIPs against `SHA256SUMS.txt` and inspect their
-      contents before any installation or DAW validation.
-- [ ] Validate the exact macOS and Windows candidate assets in target DAWs,
-      including all seven parameters, Hold chronology, Grain Core ranges,
-      transitions, automation, and v0.1/v0.1.2 state migration.
-- [ ] Confirm the JUCE 8 licensing basis for the intended distribution model.
-- [ ] Configure the reviewed secret contract and execute/verify Developer ID
-      signing and notarization on macOS plus Authenticode signing on Windows.
-- [ ] Make commercial and release decisions after the listening and workflow
-      gates. No price, date, store, or commercial validation is set.
-- [ ] Obtain explicit approval before creating a tag, publishing a GitHub
-      release, or uploading release files to a storefront.
+- [x] `v0.2.0-rc.5` is the current immutable private draft prerelease. Its
+      annotated tag resolves to `4d031a1775bd7b9620f6f332f45186f6b64dae28`.
+- [x] The
+      [rc.5 release workflow](https://github.com/notgabriels-sys/VST/actions/runs/32820071847)
+      passed its macOS build, Windows build, and draft-creation jobs. It built,
+      ran all three behavioral suites, packaged VST3/AU/CLAP for macOS and
+      VST3/CLAP for Windows, and created the private draft.
+- [x] The exact release ZIPs and `SHA256SUMS.txt` were downloaded and verified
+      on 2026-08-29. Both checksums matched; both ZIPs passed integrity tests;
+      each archive has one expected root, required project and third-party
+      notices, and the expected plug-in payloads.
+- [x] The extracted macOS VST3, AU, and CLAP binaries are universal arm64 and
+      x86_64 builds targeting macOS 12.0. The AU has no `resourceUsage`
+      declaration. The extracted Windows VST3 and CLAP binaries are PE32+
+      x86-64.
+- [x] The candidate manifests record `mac_signed=no`, `mac_notarized=no`, and
+      `win_signed=no`. The macOS bundles are ad-hoc signed only; this candidate
+      is not suitable for public distribution or sale.
 
-## Deferred feature work
+See [docs/RELEASE.md](docs/RELEASE.md) for the source commit, asset digests,
+candidate history, and release workflow rules. See
+[docs/DPF_PORT_VERIFICATION.md](docs/DPF_PORT_VERIFICATION.md) for the DPF
+port, platform build, and Audio Unit validation record.
+
+## Remaining release gates
+
+- [ ] Perform exact-asset DAW tests in Ableton Live or Bitwig for VST3, AU, and
+      CLAP where each format is supported. Record host and OS version, sample
+      rate, block size, candidate hash, discovery, instantiation, editor,
+      automation, and project save/reopen results.
+- [ ] Evaluate Freeze/unfreeze/reversal, short/default/long Hold, Pitch, Size,
+      Density, Position endpoints, stereo behavior, realistic CPU use, and
+      audible behavior by ear. Give an explicit owner sound-quality approval.
+- [ ] Run available VST3 and CLAP validator tools against the exact candidate
+      assets and resolve any substantive findings.
+- [ ] Review [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) against the
+      exact DPF, Pugl, and CLAP material in the candidate archive.
+- [ ] Decide whether public distribution requires Developer ID/notarization and
+      Windows Authenticode signing. If it does, configure the required GitHub
+      Actions secrets and first run the artifact-only signing test described in
+      [docs/CI_SECRETS.md](docs/CI_SECRETS.md).
+- [ ] Approve final product scope, price, listing copy, support terms, and
+      delivery assets. Store uploads remain manual and separate from the
+      workflow.
+- [ ] Give explicit final approval before publishing a GitHub release or
+      uploading the product to any storefront.
+
+## Candidate safety
+
+- [ ] Keep `v0.1.0`, `v0.1.1-rc.1`, and every `v0.2.0-rc.*` tag immutable.
+      Do not publish, replace, or sell the `rc.5` draft.
+- [ ] If code changes require another candidate, use a new verified-unused
+      `v0.2.0-rc.N` annotated tag only after fresh CI and the relevant
+      validation gates have been completed.
+
+## Deferred product work
 
 - [ ] Time-stretch independent of pitch.
 - [ ] Presets and a performance bank.
 - [ ] Feedback or recursive grain capture.
 - [ ] Random scatter, jitter, or probability.
 
-## Done and evidenced locally
-
-- [x] Grain Engine: deterministic fixed 64-voice playback, Hann envelopes,
-      cubic pitched reads, and overlap normalization.
-- [x] Size (grainSizeMs): 5–200 ms, default 80 ms.
-- [x] Density (densityHz): 0–200 grains/s, default 20 grains/s; zero settles
-      to silence and positive Density launches deterministically.
-- [x] Position (position): 0.00–1.00, default 1.00; chronological
-      oldest-to-newest complete windows, with 1.00 selecting the newest.
-- [x] Hold (holdMs): 50–10,000 ms, default 1,000 ms; most-recent chronological
-      window latched on fully live Freeze engagement.
-- [x] Ten-second chronological capture, immutable held view, and reversible
-      Freeze/Unfreeze transitions.
-- [x] Seven APVTS parameters, stable AU generations, host automation
-      attachments, v0.1/v0.1.2 migration, v0.2 state round-trip, automation,
-      and finite-output evidence.
-- [x] Two offline test binaries and the sixteen-file renderer listening set.
-- [x] CI workflow configured for both offline suites on pinned macOS and
-      Windows runners, with strict platform packaging and artifact failure
-      gates.
-- [x] `main` commit
-      [`3ccb569`](https://github.com/notgabriels-sys/VST/actions/runs/32673112054)
-      completed both CI jobs on 2026-08-23. Both jobs built, ran both offline
-      suites, packaged, and uploaded artifacts. The downloaded macOS and
-      Windows ZIPs passed archive-integrity and expected-payload checks on
-      2026-08-24; the macOS bundles have valid ad-hoc seals, universal
-      arm64/x86_64 binaries, and a macOS 12.0 minimum target. This is
-      main-line evidence only, not a tagged-candidate, production-signing, or
-      DAW-validation result.
-- [x] Fail-closed conditional signing/notarization workflow and
-      signature-preserving packaging implemented; no credential-dependent run
-      has completed.
-
-Local automated evidence does not replace remote macOS/Windows CI, Gabriel's
-DAW listening evaluation, signing/notarization, or commercial/release work.
+The project now uses DPF, not JUCE. Automated and packaging evidence is
+valuable engineering evidence, but it does not replace host validation,
+listening evaluation, signing, commercial decisions, or publication approval.
